@@ -1,7 +1,15 @@
+
+require 'torch'
+require 'nn'
+require 'nngraph'
+require 'optim'
 require 'image'
-local utils = require 'utils.model_utils'
-local loadcaffe_wrapper = require 'loadcaffe_wrapper'
+
+local utils = require 'utils.misc'
 local DataLoader = require 'utils.DataLoader'
+
+require 'loadcaffe_wrapper'
+local LSTM = require 'lstm'
 
 cmd = torch.CmdLine()
 cmd:text('Options')
