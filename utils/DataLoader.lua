@@ -46,8 +46,38 @@ function DataLoader.create(data_dir, batch_size)
     self.q_vocab_mapping = torch.load(questions_vocab_file)
     self.a_vocab_mapping = torch.load(answers_vocab_file)
 
+    self.q_vocab_size = 0
+    for _ in pairs(self.q_vocab_mapping) do
+        self.q_vocab_size = self.q_vocab_size + 1
+    end
+
+    self.a_vocab_size = 0
+    for _ in pairs(self.a_vocab_mapping) do
+        self.a_vocab_size = self.a_vocab_size + 1
+    end
+
     self.batch_size = batch_size
     self.batch_idx = 1
+    self.count_idx = 1
+    self.cnt_batch_idx = 1
+    self.nbatches = 0
+
+    self.counts = {}
+    local idx = 1
+    for i, v in pairs(self.data.q_train_count_idx_mapping) do
+        if #v < self.batch_size then
+            self.data.q_train_count_idx_mapping[i] = nil
+        else
+            self.counts[idx] = i
+            idx = idx + 1
+            if #v % self.batch_size ~= 0 then
+                for j = (#v - #v % self.batch_size + 1), #v do
+                    self.data.q_train_count_idx_mapping[i][j] = nil
+                end
+                self.nbatches = self.nbatches + #self.data.q_train_count_idx_mapping[i]
+            end
+        end
+    end
 
     collectgarbage()
     return self
@@ -55,12 +85,24 @@ function DataLoader.create(data_dir, batch_size)
 end
 
 function DataLoader:next_batch()
-    local batch = {question = {}, image = {}, answer = {}}
-    for i = 1, self.batch_size do
-        batch.question[i] = self.data.train[(self.batch_size * (self.batch_idx - 1) + i) % #self.data.train]['question']
-        batch.image[i] = self.data.train[(self.batch_size * (self.batch_idx - 1) + i) % #self.data.train]['image_id']
-        batch.answer[i] = self.data.train[(self.batch_size * (self.batch_idx - 1) + i) % #self.data.train]['answer']
+    if self.batch_idx == self.nbatches then self.batch_idx = 1 self.cnt_batch_idx = 1 self.count_idx = 1 end
+
+    local idx = self.data.q_train_count_idx_mapping[self.counts[self.count_idx]]
+    if self.cnt_batch_idx * self.batch_size > #idx then
+        self.count_idx = self.count_idx + 1
+        self.cnt_batch_idx = 1
+        idx = self.data.q_train_count_idx_mapping[self.counts[self.count_idx]]
     end
+
+    local batch = {question = {}, image = {}, answer = {}}
+
+    for i = 1, self.batch_size do
+        batch.question[i] = self.data.train[idx[self.batch_size * (self.cnt_batch_idx - 1) + i]]['question']
+        batch.image[i] = self.data.train[idx[self.batch_size * (self.cnt_batch_idx - 1) + i]]['image_id']
+        batch.answer[i] = self.data.train[idx[self.batch_size * (self.cnt_batch_idx - 1) + i]]['answer']
+    end
+
+    self.cnt_batch_idx = self.cnt_batch_idx + 1
     self.batch_idx = self.batch_idx + 1
     return batch
 end
@@ -87,14 +129,35 @@ function DataLoader.json_to_tensor(in_train_q, in_train_a, in_val_q, in_val_a, o
 
     local unordered = {}
 
+    local q_train_count_idx_mapping = {}
+    local q_val_count_idx_mapping = {}
+
     for i = 1, #train_q['questions'] do
+        local count = 0
         for token in word_iter(train_q['questions'][i]['question']) do
             if not unordered[token] then
                 unordered[token] = 1
             else
                 unordered[token] = unordered[token] + 1
             end
+            count = count + 1
         end
+        if not q_train_count_idx_mapping[count] then q_train_count_idx_mapping[count] = {} end
+        q_train_count_idx_mapping[count][#q_train_count_idx_mapping[count]+1] = i
+    end
+
+    for i = 1, #val_q['questions'] do
+        local count = 0
+        for token in word_iter(val_q['questions'][i]['question']) do
+            if not unordered[token] then
+                unordered[token] = 1
+            else
+                unordered[token] = unordered[token] + 1
+            end
+            count = count + 1
+        end
+        if not q_val_count_idx_mapping[count] then q_val_count_idx_mapping[count] = {} end
+        q_val_count_idx_mapping[count][#q_val_count_idx_mapping[count]+1] = i
     end
 
     local threshold = 0
@@ -163,7 +226,12 @@ function DataLoader.json_to_tensor(in_train_q, in_train_a, in_val_q, in_val_a, o
 
     -- save train+val data
 
-    local data = {train = {}, val = {}}
+    local data = {
+        train = {},
+        val = {},
+        q_train_count_idx_mapping = q_train_count_idx_mapping,
+        q_val_count_idx_mapping = q_val_count_idx_mapping
+    }
 
     for i = 1, #train_q['questions'] do
         local question = {}
