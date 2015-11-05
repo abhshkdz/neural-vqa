@@ -76,7 +76,7 @@ function DataLoader.create(data_dir, batch_size)
                 for j = (#v - #v % self.batch_size + 1), #v do
                     self.data.q_train_count_idx_mapping[i][j] = nil
                 end
-                self.nbatches = self.nbatches + #self.data.q_train_count_idx_mapping[i]
+                self.nbatches = self.nbatches + #self.data.q_train_count_idx_mapping[i] / self.batch_size
             end
         end
     end
@@ -115,77 +115,17 @@ function DataLoader.json_to_tensor(in_train_q, in_train_a, in_val_q, in_val_a, o
 
     local JSON = (loadfile "utils/JSON.lua")()
 
-    local f = torch.DiskFile(in_train_q)
-    local c = f:readString('*a')
-    local train_q = JSON:decode(c)
-    f:close()
-
-    local f = torch.DiskFile(in_val_q)
-    local c = f:readString('*a')
-    local val_q = JSON:decode(c)
-    f:close()
-
     print('creating vocabulary mapping...')
-
-    -- build question vocab using train+val
-
-    local unordered = {}
-
-    local q_train_count_idx_mapping = {}
-    local q_val_count_idx_mapping = {}
-
-    for i = 1, #train_q['questions'] do
-        local count = 0
-        for token in word_iter(train_q['questions'][i]['question']) do
-            if not unordered[token] then
-                unordered[token] = 1
-            else
-                unordered[token] = unordered[token] + 1
-            end
-            count = count + 1
-        end
-        if not q_train_count_idx_mapping[count] then q_train_count_idx_mapping[count] = {} end
-        q_train_count_idx_mapping[count][#q_train_count_idx_mapping[count]+1] = i
-    end
-
-    for i = 1, #val_q['questions'] do
-        local count = 0
-        for token in word_iter(val_q['questions'][i]['question']) do
-            if not unordered[token] then
-                unordered[token] = 1
-            else
-                unordered[token] = unordered[token] + 1
-            end
-            count = count + 1
-        end
-        if not q_val_count_idx_mapping[count] then q_val_count_idx_mapping[count] = {} end
-        q_val_count_idx_mapping[count][#q_val_count_idx_mapping[count]+1] = i
-    end
-
-    local threshold = 0
-    local ordered = {}
-    for token, count in pairs(unordered) do
-        if count > threshold then
-            ordered[#ordered + 1] = token
-        end
-    end
-    ordered[#ordered + 1] = "UNK"
-    table.sort(ordered)
-
-    local q_vocab_mapping = {}
-    for i, word in ipairs(ordered) do
-        q_vocab_mapping[word] = i
-    end
 
     -- build answer vocab using train+val
 
     local f = torch.DiskFile(in_train_a)
-    local c = f:readString('*a')
+    c = f:readString('*a')
     local train_a = JSON:decode(c)
     f:close()
 
-    local f = torch.DiskFile(in_val_a)
-    local c = f:readString('*a')
+    f = torch.DiskFile(in_val_a)
+    c = f:readString('*a')
     local val_a = JSON:decode(c)
     f:close()
 
@@ -209,6 +149,70 @@ function DataLoader.json_to_tensor(in_train_q, in_train_a, in_val_q, in_val_a, o
         end
     end
 
+    local sorted_a = get_keys_sorted_by_value(unordered, function(a, b) return a > b end)
+
+    local top_n = 1000
+    local ordered = {}
+    for i = 1, top_n do
+        ordered[#ordered + 1] = sorted_a[i]
+    end
+    ordered[#ordered + 1] = "UNK"
+    table.sort(ordered)
+
+    local a_vocab_mapping = {}
+    for i, word in ipairs(ordered) do
+        a_vocab_mapping[word] = i
+    end
+
+    -- build question vocab using train+val
+
+    f = torch.DiskFile(in_train_q)
+    c = f:readString('*a')
+    local train_q = JSON:decode(c)
+    f:close()
+
+    f = torch.DiskFile(in_val_q)
+    c = f:readString('*a')
+    local val_q = JSON:decode(c)
+    f:close()
+
+    unordered = {}
+
+    local q_train_count_idx_mapping = {}
+    local q_val_count_idx_mapping = {}
+
+    for i = 1, #train_q['questions'] do
+        local count = 0
+        for token in word_iter(train_q['questions'][i]['question']) do
+            if not unordered[token] then
+                unordered[token] = 1
+            else
+                unordered[token] = unordered[token] + 1
+            end
+            count = count + 1
+        end
+        if a_vocab_mapping[train_a['annotations'][i]['multiple_choice_answer']] then
+            if not q_train_count_idx_mapping[count] then q_train_count_idx_mapping[count] = {} end
+            q_train_count_idx_mapping[count][#q_train_count_idx_mapping[count]+1] = i
+        end
+    end
+
+    for i = 1, #val_q['questions'] do
+        local count = 0
+        for token in word_iter(val_q['questions'][i]['question']) do
+            if not unordered[token] then
+                unordered[token] = 1
+            else
+                unordered[token] = unordered[token] + 1
+            end
+            count = count + 1
+        end
+        if a_vocab_mapping[val_a['annotations'][i]['multiple_choice_answer']] then
+            if not q_val_count_idx_mapping[count] then q_val_count_idx_mapping[count] = {} end
+            q_val_count_idx_mapping[count][#q_val_count_idx_mapping[count]+1] = i
+        end
+    end
+
     local threshold = 0
     local ordered = {}
     for token, count in pairs(unordered) do
@@ -219,9 +223,9 @@ function DataLoader.json_to_tensor(in_train_q, in_train_a, in_val_q, in_val_a, o
     ordered[#ordered + 1] = "UNK"
     table.sort(ordered)
 
-    local a_vocab_mapping = {}
+    local q_vocab_mapping = {}
     for i, word in ipairs(ordered) do
-        a_vocab_mapping[word] = i
+        q_vocab_mapping[word] = i
     end
 
     print('putting data into tensor...')
@@ -236,37 +240,41 @@ function DataLoader.json_to_tensor(in_train_q, in_train_a, in_val_q, in_val_a, o
     }
 
     for i = 1, #train_q['questions'] do
-        local question = {}
-        local wl = 0
-        for token in word_iter(train_q['questions'][i]['question']) do
-            wl = wl + 1
-            question[wl] = q_vocab_mapping[token] or q_vocab_mapping["UNK"]
-        end
-        data.train[i] = {
-            image_id = train_a['annotations'][i]['image_id'],
-            question = torch.ShortTensor(wl),
-            answer = a_vocab_mapping[train_a['annotations'][i]['multiple_choice_answer']]
-        }
-        for j = 1, wl do
-            data.train[i]['question'][j] = question[j]
-        end
+        -- if a_vocab_mapping[train_a['annotations'][i]['multiple_choice_answer']] then
+            local question = {}
+            local wl = 0
+            for token in word_iter(train_q['questions'][i]['question']) do
+                wl = wl + 1
+                question[wl] = q_vocab_mapping[token] or q_vocab_mapping["UNK"]
+            end
+            data.train[i] = {
+                image_id = train_a['annotations'][i]['image_id'],
+                question = torch.ShortTensor(wl),
+                answer = a_vocab_mapping[train_a['annotations'][i]['multiple_choice_answer']]
+            }
+            for j = 1, wl do
+                data.train[i]['question'][j] = question[j]
+            end
+        -- end
     end
 
     for i = 1, #val_q['questions'] do
-        local question = {}
-        local wl = 0
-        for token in word_iter(val_q['questions'][i]['question']) do
-            wl = wl + 1
-            question[wl] = q_vocab_mapping[token] or q_vocab_mapping["UNK"]
-        end
-        data.val[i] = {
-            image_id = val_a['annotations'][i]['image_id'],
-            question = torch.ShortTensor(wl),
-            answer = a_vocab_mapping[val_a['annotations'][i]['multiple_choice_answer']]
-        }
-        for j = 1, wl do
-            data.val[i]['question'][j] = question[j]
-        end
+        -- if a_vocab_mapping[val_a['annotations'][i]['multiple_choice_answer']] then
+            local question = {}
+            local wl = 0
+            for token in word_iter(val_q['questions'][i]['question']) do
+                wl = wl + 1
+                question[wl] = q_vocab_mapping[token] or q_vocab_mapping["UNK"]
+            end
+            data.val[i] = {
+                image_id = val_a['annotations'][i]['image_id'],
+                question = torch.ShortTensor(wl),
+                answer = a_vocab_mapping[val_a['annotations'][i]['multiple_choice_answer']]
+            }
+            for j = 1, wl do
+                data.val[i]['question'][j] = question[j]
+            end
+        -- end
     end
 
     -- save output preprocessed files
@@ -281,6 +289,19 @@ end
 
 function word_iter(str)
     return string.gmatch(str, "%a+")
+end
+
+function get_keys_sorted_by_value(tbl, sort_fn)
+    local keys = {}
+    for key in pairs(tbl) do
+        table.insert(keys, key)
+    end
+
+    table.sort(keys, function(a, b)
+        return sort_fn(tbl[a], tbl[b])
+    end)
+
+    return keys
 end
 
 return DataLoader
