@@ -10,7 +10,8 @@ require 'loadcaffe_wrapper'
 
 cmd = torch.CmdLine()
 cmd:text('Options')
-cmd:option('-batch_size', 64, 'batch size')
+
+cmd:option('-batch_size', 10, 'batch size')
 -- gpu/cpu
 cmd:option('-gpuid', -1, '0-indexed id of GPU to use. -1 = CPU')
 -- bookkeeping
@@ -46,24 +47,24 @@ if opt.gpuid >= 0 then
     end
 end
 
-vgg = loadcaffe.load(opt.proto_file, opt.model_file)
+cnn = loadcaffe.load(opt.proto_file, opt.model_file)
 if opt.gpuid >= 0 then
-    vgg = vgg:cuda()
+    cnn = cnn:cuda()
 end
 
-vgg_fc7 = nn.Sequential()
+cnn_fc7 = nn.Sequential()
 
-for i = 1, #vgg.modules do
-    local layer = vgg:get(i)
+for i = 1, #cnn.modules do
+    local layer = cnn:get(i)
     local name = layer.name
-    vgg_fc7:add(layer)
+    cnn_fc7:add(layer)
     if name == opt.feat_layer then
         break
     end
 end
 
 if opt.gpuid >= 0 then
-    vgg_fc7 = vgg_fc7:cuda()
+    cnn_fc7 = cnn_fc7:cuda()
 end
 
 tmp_image_id = {}
@@ -78,12 +79,15 @@ for i, v in pairs(tmp_image_id) do
     idx = idx + 1
 end
 
-fc7 = {}
+fc7 = torch.DoubleTensor(#image_id, 4096)
 idx = 1
 
+if opt.gpuid >= 0 then
+    fc7 = fc7:cuda()
+end
+
 repeat
-    -- local timer = torch.Timer()
-    img_batch = torch.DoubleTensor(opt.batch_size, 3, 224, 224)
+    img_batch = torch.zeros(opt.batch_size, 3, 224, 224)
     img_id_batch = {}
     for i = 1, opt.batch_size do
         if not loader.data.train[idx] then
@@ -99,12 +103,13 @@ repeat
         img_batch = img_batch:cuda()
     end
 
-    fc7_batch = vgg_fc7:forward(img_batch)
-    for i = 1, #img_id_batch do
-        fc7[img_id_batch[i]] = fc7_batch[i]:float()
+    fc7_batch = cnn_fc7:forward(img_batch)
+
+    for i = 1, fc7_batch:size(1) do
+        fc7[idx - fc7_batch:size(1) + i - 1]:copy(fc7_batch[i])
     end
 
-    -- local time = timer:time().real
+    collectgarbage()
     print(idx-1 .. '/' .. #image_id)
 until idx >= #image_id
 
