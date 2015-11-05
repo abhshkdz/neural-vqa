@@ -18,6 +18,7 @@ function DataLoader.create(data_dir, batch_size)
     local answers_vocab_file = path.join(data_dir, 'answers_vocab.t7')
 
     local tensor_file = path.join(data_dir, 'data.t7')
+    local embeddings_file = path.join(data_dir, 'q_200d_glove_embeddings.t7')
 
     -- fetch file attributes to determine if we need to rerun preprocessing
 
@@ -45,6 +46,7 @@ function DataLoader.create(data_dir, batch_size)
     self.data = torch.load(tensor_file)
     self.q_vocab_mapping = torch.load(questions_vocab_file)
     self.a_vocab_mapping = torch.load(answers_vocab_file)
+    self.q_embeddings = torch.load(embeddings_file)
 
     self.q_vocab_size = 0
     for _ in pairs(self.q_vocab_mapping) do

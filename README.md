@@ -24,3 +24,6 @@
 
 - npy4th
     - change to c++0x in CMakeLists.txt
+
+- 200d GloVe embeddings
+    - http://nlp.stanford.edu/projects/glove/
