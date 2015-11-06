@@ -1,3 +1,8 @@
+[[
+    Torch implementation of the VIS + LSTM model from the paper
+    'Exploring Models and Data for Image Question Answering'
+    by Mengye Ren, Ryan Kiros & Richard Zemel
+]]
 
 require 'torch'
 require 'nn'
@@ -13,24 +18,29 @@ local LSTM = require 'lstm'
 
 cmd = torch.CmdLine()
 cmd:text('Options')
-cmd:option('-data_dir', 'data', 'data directory.')
 
+cmd:option('-data_dir', 'data', 'data directory')
+cmd:option('-checkpoint_dir', 'checkpoints', 'data directory')
+cmd:option('-savefile', 'vqa', 'filename to save checkpoint to')
 -- model params
-cmd:option('-rnn_size', 256, 'size of LSTM internal state')
+cmd:option('-rnn_size', 1024, 'size of LSTM internal state')
 cmd:option('-embedding_size', 200, 'size of word embeddings')
 -- optimization
-cmd:option('-learning_rate',2e-3,'learning rate')
-cmd:option('-learning_rate_decay',0.97,'learning rate decay')
-cmd:option('-learning_rate_decay_after',10,'in number of epochs, when to start decaying the learning rate')
-cmd:option('-decay_rate',0.95,'decay rate for rmsprop')
+cmd:option('-learning_rate', 2e-3, 'learning rate')
+cmd:option('-learning_rate_decay', 0.97, 'learning rate decay')
+cmd:option('-learning_rate_decay_after', 10, 'in number of epochs, when to start decaying the learning rate')
+cmd:option('-decay_rate', 0.95, 'decay rate for rmsprop')
 cmd:option('-batch_size', 64, 'batch size')
+cmd:option('-max_epochs', 50, 'number of full passes through the training data')
 -- bookkeeping
 cmd:option('-seed', 981723, 'Torch manual random number generator seed')
-cmd:option('-save_every', 50)
+cmd:option('-save_every', 500)
 cmd:option('-proto_file', 'models/VGG_ILSVRC_19_layers_deploy.prototxt')
 cmd:option('-model_file', 'models/VGG_ILSVRC_19_layers.caffemodel')
 cmd:option('-feat_layer', 'fc7', 'Layer to extract features from, for input to LSTM')
 cmd:option('-input_image_dir', '/srv/share/data/mscoco/images')
+cmd:option('-fc7_file', '0', 'Path to fc7 features')
+cmd:option('-fc7_image_id_file', '0', 'Path to fc7 image ids')
 -- gpu/cpu
 cmd:option('-gpuid', -1, '0-indexed id of GPU to use. -1 = CPU')
 
@@ -59,32 +69,42 @@ if opt.gpuid >= 0 then
     end
 end
 
-vgg = loadcaffe.load(opt.proto_file, opt.model_file, 'nn')
-if opt.gpuid >= 0 then
-    vgg = vgg:cuda()
-end
+if opt.fc7_file == '0' then
+    vgg = loadcaffe.load(opt.proto_file, opt.model_file)
+    if opt.gpuid >= 0 then
+        vgg = vgg:cuda()
+    end
 
-vgg_fc7 = nn.Sequential()
+    vgg_fc7 = nn.Sequential()
 
-for i = 1, #vgg.modules do
-    local layer = vgg:get(i)
-    local name = layer.name
-    vgg_fc7:add(layer)
-    if name == opt.feat_layer then
-        break
+    for i = 1, #vgg.modules do
+        local layer = vgg:get(i)
+        local name = layer.name
+        vgg_fc7:add(layer)
+        if name == opt.feat_layer then
+            break
+        end
+    end
+
+    if opt.gpuid >= 0 then
+        vgg_fc7 = vgg_fc7:cuda()
+    end
+else
+    print('Loading fc7 features from ' .. opt.fc7_file)
+    fc7 = torch.load(opt.fc7_file)
+    fc7_image_id = torch.load(opt.fc7_image_id_file)
+    fc7_mapping = {}
+    for i, v in pairs(fc7_image_id) do
+        fc7_mapping[v] = i
     end
 end
-
-if opt.gpuid >= 0 then
-    vgg_fc7 = vgg_fc7:cuda()
-end
-
--- print(vgg_fc7)
 
 ltw = nn.LookupTable(loader.q_vocab_size, opt.embedding_size)
 ltw.weight = loader.q_embeddings:clone()
 
-lti = nn.Linear(4096, opt.embedding_size)
+lti = nn.Sequential()
+lti:add(nn.Linear(4096, opt.embedding_size))
+lti:add(nn.Tanh())
 
 lstm = LSTM.create(opt.embedding_size, opt.rnn_size)
 
@@ -112,6 +132,9 @@ end
 -- put the above things into one flattened parameters tensor
 params, grad_params = utils.combine_all_parameters(model)
 
+print('Parameters: ' .. params:size(1))
+print('Batches: ' .. loader.nbatches)
+
 -- initialization
 if do_random_init then
     params:uniform(-0.08, 0.08) -- small uniform numbers
@@ -130,7 +153,6 @@ table.insert(init_state, h_init:clone())
 
 local init_state_global = utils.clone_list(init_state)
 
--- for i = 1, 2 do
 feval = function(x)
 
     if x ~= params then
@@ -138,21 +160,27 @@ feval = function(x)
     end
     grad_params:zero()
 
-    data = loader:next_batch()
+    q_batch, a_batch, i_data = loader:next_batch()
 
     clones = {}
-    clones = utils.clone_many_times(lstm, loader.counts[loader.count_idx] + 1)
+    clones = utils.clone_many_times(lstm, q_batch:size(2) + 1)
 
-    q_batch = torch.ShortTensor(opt.batch_size, loader.counts[loader.count_idx])
-    img_batch = torch.DoubleTensor(opt.batch_size, 3, 224, 224)
-    a_batch = torch.ShortTensor(opt.batch_size)
+    if opt.fc7_file == '0' then
+        img_batch = torch.DoubleTensor(opt.batch_size, 3, 224, 224)
+    else
+        img_batch = torch.DoubleTensor(opt.batch_size, 4096)
+        if opt.gpuid >= 0 then
+            img_batch = img_batch:cuda()
+        end
+    end
 
     for j = 1, opt.batch_size do
-        local fp = path.join(opt.input_image_dir, string.format('train2014/COCO_train2014_%.12d.jpg', data.image[j]))
-        img_batch[j] = utils.preprocess(image.scale(image.load(fp, 3), 224, 224))
-        -- print(fp)
-        q_batch[j] = data.question[j]
-        a_batch[j] = data.answer[j]
+        if opt.fc7_file == '0' then
+            local fp = path.join(opt.input_image_dir, string.format('train2014/COCO_train2014_%.12d.jpg', i_data[j]))
+            img_batch[j] = utils.preprocess(image.scale(image.load(fp, 3), 224, 224))
+        else
+            img_batch[j] = fc7[fc7_mapping[i_data[j]]]
+        end
     end
 
     if opt.gpuid >= 0 then
@@ -163,8 +191,12 @@ feval = function(x)
 
     qf = ltw:forward(q_batch)
 
-    fc7 = vgg_fc7:forward(img_batch)
-    imf = lti:forward(fc7)
+    if opt.fc7_file == '0' then
+        fc7 = vgg_fc7:forward(img_batch)
+        imf = lti:forward(fc7)
+    else
+        imf = lti:forward(img_batch)
+    end
 
     ------------ forward pass ------------
 
@@ -181,8 +213,6 @@ feval = function(x)
 
     prediction = sm:forward(lst[#lst])
     loss = criterion:forward(prediction, a_batch)
-
-    print('loss: ' .. loss)
 
     ------------ backward pass ------------
 
@@ -202,15 +232,45 @@ feval = function(x)
     _, lstm_dparams = lstm:getParameters()
     lstm_dparams:clamp(-5, 5)
 
-    return loss, params
+    return loss, grad_params
 
 end
 
 local optim_state = {learningRate = opt.learning_rate, alpha = opt.decay_rate}
 
-epochs = 1e2
 losses = {}
-for i = 1, epochs do
+iterations = opt.max_epochs * loader.nbatches
+for i = 1, iterations do
     _,local_loss = optim.rmsprop(feval, params, optim_state)
     losses[#losses + 1] = local_loss[1]
+
+    local epoch = i / loader.nbatches
+
+    print('epoch ' .. epoch .. ' loss ' .. local_loss[1])
+
+    if i % loader.nbatches == 0 and opt.learning_rate_decay < 1 then
+        if epoch >= opt.learning_rate_decay_after then
+            local decay_factor = opt.learning_rate_decay
+            optim_state.learningRate = optim_state.learningRate * decay_factor -- decay it
+            print('decayed learning rate by a factor ' .. decay_factor .. ' to ' .. optim_state.learningRate)
+        end
+    end
+
+    if i % opt.save_every == 0 or i == iterations then
+        local savefile = string.format('%s/vqa_%s_epoch%.2f_%.4f.t7', opt.checkpoint_dir, opt.savefile, epoch, local_loss[1])
+        print('saving checkpoint to ' .. savefile)
+        local checkpoint = {}
+        checkpoint.opt = opt
+        checkpoint.protos = {}
+        checkpoint.protos.ltw = ltw
+        checkpoint.protos.lti = lti
+        checkpoint.protos.lstm = lstm
+        checkpoint.protos.sm = sm
+        checkpoint.vocab_size = loader.q_vocab_size
+        torch.save(savefile, checkpoint)
+    end
+
+    if i%10 == 0 then
+        collectgarbage()
+    end
 end

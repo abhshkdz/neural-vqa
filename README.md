@@ -47,6 +47,13 @@ those questions aren't used for training. Yeah, I know..
 - Training questions are further filtered for the top-n answers. `n = 1000` by default,
 but can be set in `utils/DataLoader.lua`.
 
+## Todo
+
+- Val batch data loading
+- Val loss on checkpoint
+- Prediction + evaluation
+- Antol2015 model
+
 [1]: http://visualqa.org/
 [2]: http://arxiv.org/abs/1505.02074
 [3]: http://arxiv.org/abs/1505.00468
