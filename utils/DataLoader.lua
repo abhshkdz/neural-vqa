@@ -76,8 +76,8 @@ function DataLoader.create(data_dir, batch_size)
                 for j = (#v - #v % self.batch_size + 1), #v do
                     self.data.q_train_count_idx_mapping[i][j] = nil
                 end
-                self.nbatches = self.nbatches + #self.data.q_train_count_idx_mapping[i] / self.batch_size
             end
+            self.nbatches = self.nbatches + #self.data.q_train_count_idx_mapping[i] / self.batch_size
         end
     end
 
@@ -96,22 +96,22 @@ function DataLoader:next_batch()
         idx = self.data.q_train_count_idx_mapping[self.counts[self.count_idx]]
     end
 
-    local batch = {question = {}, image = {}, answer = {}}
+    question = torch.ShortTensor(self.batch_size, self.counts[self.count_idx])
+    answer = torch.ShortTensor(self.batch_size)
+    image = {}
 
     for i = 1, self.batch_size do
-        batch.question[i] = self.data.train[idx[self.batch_size * (self.cnt_batch_idx - 1) + i]]['question']
-        batch.image[i] = self.data.train[idx[self.batch_size * (self.cnt_batch_idx - 1) + i]]['image_id']
-        batch.answer[i] = self.data.train[idx[self.batch_size * (self.cnt_batch_idx - 1) + i]]['answer']
+        question[i] = self.data.train[idx[self.batch_size * (self.cnt_batch_idx - 1) + i]]['question']
+        image[i] = self.data.train[idx[self.batch_size * (self.cnt_batch_idx - 1) + i]]['image_id']
+        answer[i] = self.data.train[idx[self.batch_size * (self.cnt_batch_idx - 1) + i]]['answer']
     end
 
     self.cnt_batch_idx = self.cnt_batch_idx + 1
     self.batch_idx = self.batch_idx + 1
-    return batch
+    return question, answer, image
 end
 
 function DataLoader.json_to_tensor(in_train_q, in_train_a, in_val_q, in_val_a, out_vocab_q, out_vocab_a, out_tensor)
-
-    local timer = torch.Timer()
 
     local JSON = (loadfile "utils/JSON.lua")()
 
