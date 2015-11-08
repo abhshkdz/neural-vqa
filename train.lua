@@ -32,23 +32,26 @@ cmd:option('-learning_rate_decay_after', 10, 'in number of epochs, when to start
 cmd:option('-decay_rate', 0.95, 'decay rate for rmsprop')
 cmd:option('-batch_size', 64, 'batch size')
 cmd:option('-max_epochs', 50, 'number of full passes through the training data')
+cmd:option('-dropout', 0.5, 'dropout')
 -- bookkeeping
 cmd:option('-seed', 981723, 'Torch manual random number generator seed')
-cmd:option('-save_every', 500)
+cmd:option('-save_every', 1000, 'No. of iterations after which to checkpoint')
 cmd:option('-proto_file', 'models/VGG_ILSVRC_19_layers_deploy.prototxt')
 cmd:option('-model_file', 'models/VGG_ILSVRC_19_layers.caffemodel')
 cmd:option('-feat_layer', 'fc7', 'Layer to extract features from, for input to LSTM')
-cmd:option('-input_image_dir', '/srv/share/data/mscoco/images')
+cmd:option('-input_image_dir', 'data')
 cmd:option('-fc7_file', '0', 'Path to fc7 features')
 cmd:option('-fc7_image_id_file', '0', 'Path to fc7 image ids')
+cmd:option('-val_fc7_file', '0', 'Path to fc7 features')
+cmd:option('-val_fc7_image_id_file', '0', 'Path to fc7 image ids')
 -- gpu/cpu
 cmd:option('-gpuid', -1, '0-indexed id of GPU to use. -1 = CPU')
 
 opt = cmd:parse(arg or {})
 torch.manualSeed(opt.seed)
 
--- require 'vtutils'
--- opt.gpuid = obtain_gpu_lock_id.get_id()
+require 'vtutils'
+opt.gpuid = obtain_gpu_lock_id.get_id()
 
 if opt.gpuid >= 0 then
     local ok, cunn = pcall(require, 'cunn')
@@ -91,12 +94,15 @@ if opt.fc7_file == '0' then
     end
 end
 
-ltw = nn.LookupTable(loader.q_vocab_size, opt.embedding_size)
-ltw.weight = loader.q_embeddings:clone()
+ltw = nn.Sequential()
+ltw:add(nn.LookupTable(loader.q_vocab_size, opt.embedding_size))
+ltw:get(1).weight = loader.q_embeddings:clone()
+ltw:add(nn.Dropout(opt.dropout))
 
 lti = nn.Sequential()
 lti:add(nn.Linear(4096, opt.embedding_size))
 lti:add(nn.Tanh())
+lti:add(nn.Dropout(opt.dropout))
 
 lstm = LSTM.create(opt.embedding_size, opt.rnn_size)
 
@@ -147,9 +153,53 @@ q_length = -1
 
 local init_state_global = utils.clone_list(init_state)
 
-feval = function(x)
+feval_val = function(max_batches)
 
-    -- local timer = torch.Timer()
+    n = loader.val_nbatches
+    count = 0
+    if max_batches ~= nil then n = math.min(n, max_batches) end
+
+    for i = 1, n do
+
+        q_batch, a_batch, i_batch = loader:next_batch('val')
+
+        if q_length == -1 or q_length ~= q_batch:size(2) then
+            q_length = q_batch:size(2)
+            clones = {}
+            clones = utils.clone_many_times(lstm, q_length + 1)
+        end
+
+        qf = ltw:forward(q_batch)
+
+        imf = lti:forward(i_batch)
+
+        rnn_state = {[0] = init_state_global}
+        loss = 0
+        lst = clones[1]:forward{imf, unpack(rnn_state[0])}
+        rnn_state[1] = {}
+        for i = 1, #init_state do table.insert(rnn_state[1], lst[i]) end
+        for t = 2, q_length + 1 do
+            lst = clones[t]:forward{qf:select(2,t-1), unpack(rnn_state[t-1])}
+            rnn_state[t] = {}
+            for i = 1, #init_state do table.insert(rnn_state[t], lst[i]) end
+        end
+
+        prediction = sm:forward(lst[#lst])
+
+        _, idx  = prediction:max(2)
+        for j = 1, opt.batch_size do
+            if idx[j][1] == a_batch[j] then
+                count = count + 1
+            end
+        end
+
+    end
+
+    return count / (n * opt.batch_size)
+
+end
+
+feval = function(x)
 
     if x ~= params then
         params:copy(x)
@@ -168,12 +218,6 @@ feval = function(x)
 
     imf = lti:forward(i_batch)
 
-    -- cutorch.synchronize()
-    -- local time = timer:time().real
-    -- print("time before forward pass: " .. time)
-
-    -- local timer = torch.Timer()
-
     ------------ forward pass ------------
 
     rnn_state = {[0] = init_state_global}
@@ -190,12 +234,6 @@ feval = function(x)
     prediction = sm:forward(lst[#lst])
     loss = criterion:forward(prediction, a_batch)
 
-    -- cutorch.synchronize()
-    -- local time = timer:time().real
-    -- print("time for forward pass: " .. time)
-
-    -- local timer = torch.Timer()
-
     ------------ backward pass ------------
 
     dloss = criterion:backward(prediction, a_batch)
@@ -210,10 +248,6 @@ feval = function(x)
         table.insert(drnn_state[t-1], dlst[2])
         table.insert(drnn_state[t-1], dlst[3])
     end
-
-    -- cutorch.synchronize()
-    -- local time = timer:time().real
-    -- print("time for backward pass: " .. time)
 
     _, lstm_dparams = lstm:getParameters()
     lstm_dparams:clamp(-5, 5)
@@ -248,8 +282,10 @@ for i = 1, iterations do
     end
 
     if i % opt.save_every == 0 or i == iterations then
-        local savefile = string.format('%s/vqa_%s_epoch%.2f_%.4f.t7', opt.checkpoint_dir, opt.savefile, epoch, local_loss[1])
-        print('saving checkpoint to ' .. savefile)
+        print('Checkpointing. Calculating validation accuracy..')
+        local val_acc = feval_val()
+        local savefile = string.format('%s/%s_epoch%.2f_%.4f.t7', opt.checkpoint_dir, opt.savefile, epoch, val_acc)
+        print('Saving checkpoint to ' .. savefile)
         local checkpoint = {}
         checkpoint.opt = opt
         checkpoint.protos = {}

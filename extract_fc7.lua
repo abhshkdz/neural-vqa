@@ -22,12 +22,10 @@ cmd:option('-proto_file', 'models/VGG_ILSVRC_19_layers_deploy.prototxt')
 cmd:option('-model_file', 'models/VGG_ILSVRC_19_layers.caffemodel')
 cmd:option('-data_dir', 'data', 'data directory.')
 cmd:option('-feat_layer', 'fc7', 'Layer to extract features from')
-cmd:option('-input_image_dir', '/srv/share/data/mscoco/images')
+cmd:option('-input_image_dir', 'data')
 
 opt = cmd:parse(arg or {})
 torch.manualSeed(opt.seed)
-
-loader = DataLoader.create(opt.data_dir, opt.batch_size)
 
 require 'vtutils'
 opt.gpuid = obtain_gpu_lock_id.get_id()
@@ -39,7 +37,7 @@ if opt.gpuid >= 0 then
     if not ok2 then print('package cutorch not found!') end
     if ok and ok2 then
         print('using CUDA on GPU ' .. opt.gpuid .. '...')
-        cutorch.setDevice(opt.gpuid + 1) -- torch is 1-indexed
+        cutorch.setDevice(opt.gpuid + 1)
         cutorch.manualSeed(opt.seed)
     else
         print('If cutorch and cunn are installed, your CUDA toolkit may be improperly configured.')
@@ -48,6 +46,8 @@ if opt.gpuid >= 0 then
         opt.gpuid = -1
     end
 end
+
+loader = DataLoader.create(opt.data_dir, opt.batch_size, opt, true)
 
 cnn = loadcaffe.load(opt.proto_file, opt.model_file)
 if opt.gpuid >= 0 then
@@ -102,6 +102,9 @@ repeat
             break
         end
         local fp = path.join(opt.input_image_dir, string.format('%s2014/COCO_%s2014_%.12d.jpg', opt.split, opt.split, image_id[idx]))
+        if image_id[idx] == 320612 and opt.split == 'val' then -- this is png :/
+            fp = path.join(opt.input_image_dir, 'val2014/COCO_val2014_000000320612.png.jpg')
+        end
         if opt.debug == 1 then
             print(idx)
             print(fp)
@@ -123,6 +126,9 @@ repeat
         end
         fc7[idx - fc7_batch:size(1) + i - 1]:copy(fc7_batch[i])
     end
+
+    cutorch.synchronize()
+
     local time = timer:time().real
     print(idx-1 .. '/' .. #image_id .. " " .. time)
     collectgarbage()

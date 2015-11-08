@@ -3,7 +3,7 @@
 local DataLoader = {}
 DataLoader.__index = DataLoader
 
-function DataLoader.create(data_dir, batch_size, opt)
+function DataLoader.create(data_dir, batch_size, opt, return_raw_data)
 
     local self = {}
     setmetatable(self, DataLoader)
@@ -43,7 +43,7 @@ function DataLoader.create(data_dir, batch_size, opt)
     end
 
     print('loading data files...')
-    self.data = torch.load(tensor_file)
+    local data = torch.load(tensor_file)
     self.q_vocab_mapping = torch.load(questions_vocab_file)
     self.a_vocab_mapping = torch.load(answers_vocab_file)
     self.q_embeddings = torch.load(embeddings_file)
@@ -58,37 +58,46 @@ function DataLoader.create(data_dir, batch_size, opt)
         self.a_vocab_size = self.a_vocab_size + 1
     end
 
-    if opt.fc7_file ~= '0' then
-        print('Loading fc7 features from ' .. opt.fc7_file)
-        self.fc7 = torch.load(opt.fc7_file)
-        self.fc7_image_id = torch.load(opt.fc7_image_id_file)
-        self.fc7_mapping = {}
-        for i, v in pairs(self.fc7_image_id) do
-            self.fc7_mapping[v] = i
-        end
+    if return_raw_data == true then
+        self.data = data
+        collectgarbage()
+        return self
     end
 
     self.batch_size = batch_size
     self.nbatches = 0
+    self.val_nbatches = 0
     self.counts = {}
+    self.val_counts = {}
+
+    -- Load train into batches
+
+    print('Loading fc7 features from ' .. opt.fc7_file)
+    local fc7 = torch.load(opt.fc7_file)
+    local fc7_image_id = torch.load(opt.fc7_image_id_file)
+    local fc7_mapping = {}
+    for i, v in pairs(fc7_image_id) do
+        fc7_mapping[v] = i
+    end
+
+    self.batch_data = {['train'] = {}, ['val'] = {}}
 
     local idx = 1
-    for i, v in pairs(self.data.q_train_count_idx_mapping) do
+    for i, v in pairs(data.q_train_count_idx_mapping) do
         if #v < self.batch_size then
-            self.data.q_train_count_idx_mapping[i] = nil
+            data.q_train_count_idx_mapping[i] = nil
         else
             self.counts[idx] = i
             idx = idx + 1
             if #v % self.batch_size ~= 0 then
                 for j = (#v - #v % self.batch_size + 1), #v do
-                    self.data.q_train_count_idx_mapping[i][j] = nil
+                    data.q_train_count_idx_mapping[i][j] = nil
                 end
             end
-            self.nbatches = self.nbatches + #self.data.q_train_count_idx_mapping[i] / self.batch_size
+            self.nbatches = self.nbatches + #data.q_train_count_idx_mapping[i] / self.batch_size
         end
     end
 
-    self.batch_data = {['train'] = {}}
     self.batch_data.train = {
         ['question'] = {},
         ['answer'] = torch.ShortTensor(self.batch_size * self.nbatches),
@@ -100,12 +109,12 @@ function DataLoader.create(data_dir, batch_size, opt)
     end
 
     idx = 1
-    for i, v in pairs(self.data.q_train_count_idx_mapping) do
+    for i, v in pairs(data.q_train_count_idx_mapping) do
         self.batch_data.train.question[i] = torch.ShortTensor(#v, i)
         for j = 1, #v do
-            self.batch_data.train.question[i][j] = self.data.train[v[j]]['question']
-            self.batch_data.train.answer[idx] = self.data.train[v[j]]['answer']
-            self.batch_data.train.image_feat[idx] = self.fc7[self.fc7_mapping[self.data.train[v[j]]['image_id']]]
+            self.batch_data.train.question[i][j] = data.train[v[j]]['question']
+            self.batch_data.train.answer[idx] = data.train[v[j]]['answer']
+            self.batch_data.train.image_feat[idx] = fc7[fc7_mapping[data.train[v[j]]['image_id']]]
             idx = idx + 1
         end
         if opt.gpuid >= 0 then
@@ -117,33 +126,107 @@ function DataLoader.create(data_dir, batch_size, opt)
         self.batch_data.train.answer = self.batch_data.train.answer:cuda()
     end
 
-    self.data.train = nil
+    -- Load val into batches
+
+    print('Loading fc7 features from ' .. opt.val_fc7_file)
+    local fc7 = torch.load(opt.val_fc7_file)
+    local fc7_image_id = torch.load(opt.val_fc7_image_id_file)
+    local fc7_mapping = {}
+    for i, v in pairs(fc7_image_id) do
+        fc7_mapping[v] = i
+    end
+
+    idx = 1
+    for i, v in pairs(data.q_val_count_idx_mapping) do
+        if #v < self.batch_size then
+            data.q_val_count_idx_mapping[i] = nil
+        else
+            self.val_counts[idx] = i
+            idx = idx + 1
+            if #v % self.batch_size ~= 0 then
+                for j = (#v - #v % self.batch_size + 1), #v do
+                    data.q_val_count_idx_mapping[i][j] = nil
+                end
+            end
+            self.val_nbatches = self.val_nbatches + #data.q_val_count_idx_mapping[i] / self.batch_size
+        end
+    end
+
+    self.batch_data.val = {
+        ['question'] = {},
+        ['answer'] = torch.ShortTensor(self.batch_size * self.val_nbatches),
+        ['image_feat'] = torch.DoubleTensor(self.batch_size * self.val_nbatches, 4096)
+    }
+
+    if opt.gpuid >= 0 then
+        self.batch_data.val.image_feat = self.batch_data.val.image_feat:cuda()
+    end
+
+    idx = 1
+    for i, v in pairs(data.q_val_count_idx_mapping) do
+        self.batch_data.val.question[i] = torch.ShortTensor(#v, i)
+        for j = 1, #v do
+            self.batch_data.val.question[i][j] = data.val[v[j]]['question']
+            self.batch_data.val.answer[idx] = data.val[v[j]]['answer']
+            self.batch_data.val.image_feat[idx] = fc7[fc7_mapping[data.val[v[j]]['image_id']]]
+            idx = idx + 1
+        end
+        if opt.gpuid >= 0 then
+            self.batch_data.val.question[i] = self.batch_data.val.question[i]:cuda()
+        end
+    end
+
+    if opt.gpuid >= 0 then
+        self.batch_data.val.answer = self.batch_data.val.answer:cuda()
+    end
 
     self.batch_idx = 1
     self.count_idx = 1
     self.cnt_batch_idx = 1
+
+    self.val_batch_idx = 1
+    self.val_count_idx = 1
+    self.val_cnt_batch_idx = 1
 
     collectgarbage()
     return self
 
 end
 
-function DataLoader:next_batch()
-    if self.batch_idx - 1 == self.nbatches then self.batch_idx = 1 self.cnt_batch_idx = 1 self.count_idx = 1 end
+function DataLoader:next_batch(split)
+    if split == 'val' then
+        if self.val_batch_idx - 1 == self.val_nbatches then self.val_batch_idx = 1 self.val_cnt_batch_idx = 1 self.val_count_idx = 1 end
 
-    if self.cnt_batch_idx * self.batch_size - 1 > self.batch_data.train.question[self.counts[self.count_idx]]:size(1) then
-        self.count_idx = self.count_idx + 1
-        self.cnt_batch_idx = 1
+        if self.val_cnt_batch_idx * self.batch_size - 1 > self.batch_data.val.question[self.val_counts[self.val_count_idx]]:size(1) then
+            self.val_count_idx = self.val_count_idx + 1
+            self.val_cnt_batch_idx = 1
+        end
+
+        question = self.batch_data.val.question[self.val_counts[self.val_count_idx]]:narrow(1, (self.val_cnt_batch_idx - 1) * self.batch_size + 1, self.batch_size)
+        answer = self.batch_data.val.answer:narrow(1, (self.val_batch_idx - 1) * self.batch_size + 1, self.batch_size)
+        image = self.batch_data.val.image_feat:narrow(1, (self.val_batch_idx - 1) * self.batch_size + 1, self.batch_size)
+
+        self.val_batch_idx = self.val_batch_idx + 1
+        self.val_cnt_batch_idx = self.val_cnt_batch_idx + 1
+
+        return question, answer, image
+    else
+        if self.batch_idx - 1 == self.nbatches then self.batch_idx = 1 self.cnt_batch_idx = 1 self.count_idx = 1 end
+
+        if self.cnt_batch_idx * self.batch_size - 1 > self.batch_data.train.question[self.counts[self.count_idx]]:size(1) then
+            self.count_idx = self.count_idx + 1
+            self.cnt_batch_idx = 1
+        end
+
+        question = self.batch_data.train.question[self.counts[self.count_idx]]:narrow(1, (self.cnt_batch_idx - 1) * self.batch_size + 1, self.batch_size)
+        answer = self.batch_data.train.answer:narrow(1, (self.batch_idx - 1) * self.batch_size + 1, self.batch_size)
+        image = self.batch_data.train.image_feat:narrow(1, (self.batch_idx - 1) * self.batch_size + 1, self.batch_size)
+
+        self.batch_idx = self.batch_idx + 1
+        self.cnt_batch_idx = self.cnt_batch_idx + 1
+
+        return question, answer, image
     end
-
-    question = self.batch_data.train.question[self.counts[self.count_idx]]:narrow(1, (self.cnt_batch_idx - 1) * self.batch_size + 1, self.batch_size)
-    answer = self.batch_data.train.answer:narrow(1, (self.batch_idx - 1) * self.batch_size + 1, self.batch_size)
-    image = self.batch_data.train.image_feat:narrow(1, (self.batch_idx - 1) * self.batch_size + 1, self.batch_size)
-
-    self.batch_idx = self.batch_idx + 1
-    self.cnt_batch_idx = self.cnt_batch_idx + 1
-
-    return question, answer, image
 end
 
 function DataLoader.json_to_tensor(in_train_q, in_train_a, in_val_q, in_val_a, out_vocab_q, out_vocab_a, out_tensor)
