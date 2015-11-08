@@ -1,9 +1,9 @@
--- https://github.com/larspars/word-rnn/blob/master/util/CharSplitLMMinibatchLoader.lua
+-- Messy but works.
 
 local DataLoader = {}
 DataLoader.__index = DataLoader
 
-function DataLoader.create(data_dir, batch_size)
+function DataLoader.create(data_dir, batch_size, opt)
 
     local self = {}
     setmetatable(self, DataLoader)
@@ -58,13 +58,20 @@ function DataLoader.create(data_dir, batch_size)
         self.a_vocab_size = self.a_vocab_size + 1
     end
 
-    self.batch_size = batch_size
-    self.batch_idx = 1
-    self.count_idx = 1
-    self.cnt_batch_idx = 1
-    self.nbatches = 0
+    if opt.fc7_file ~= '0' then
+        print('Loading fc7 features from ' .. opt.fc7_file)
+        self.fc7 = torch.load(opt.fc7_file)
+        self.fc7_image_id = torch.load(opt.fc7_image_id_file)
+        self.fc7_mapping = {}
+        for i, v in pairs(self.fc7_image_id) do
+            self.fc7_mapping[v] = i
+        end
+    end
 
+    self.batch_size = batch_size
+    self.nbatches = 0
     self.counts = {}
+
     local idx = 1
     for i, v in pairs(self.data.q_train_count_idx_mapping) do
         if #v < self.batch_size then
@@ -81,33 +88,61 @@ function DataLoader.create(data_dir, batch_size)
         end
     end
 
+    self.batch_data = {['train'] = {}}
+    self.batch_data.train = {
+        ['question'] = {},
+        ['answer'] = torch.ShortTensor(self.batch_size * self.nbatches),
+        ['image_feat'] = torch.DoubleTensor(self.batch_size * self.nbatches, 4096)
+    }
+
+    if opt.gpuid >= 0 then
+        self.batch_data.train.image_feat = self.batch_data.train.image_feat:cuda()
+    end
+
+    idx = 1
+    for i, v in pairs(self.data.q_train_count_idx_mapping) do
+        self.batch_data.train.question[i] = torch.ShortTensor(#v, i)
+        for j = 1, #v do
+            self.batch_data.train.question[i][j] = self.data.train[v[j]]['question']
+            self.batch_data.train.answer[idx] = self.data.train[v[j]]['answer']
+            self.batch_data.train.image_feat[idx] = self.fc7[self.fc7_mapping[self.data.train[v[j]]['image_id']]]
+            idx = idx + 1
+        end
+        if opt.gpuid >= 0 then
+            self.batch_data.train.question[i] = self.batch_data.train.question[i]:cuda()
+        end
+    end
+
+    if opt.gpuid >= 0 then
+        self.batch_data.train.answer = self.batch_data.train.answer:cuda()
+    end
+
+    self.data.train = nil
+
+    self.batch_idx = 1
+    self.count_idx = 1
+    self.cnt_batch_idx = 1
+
     collectgarbage()
     return self
 
 end
 
 function DataLoader:next_batch()
-    if self.batch_idx == self.nbatches then self.batch_idx = 1 self.cnt_batch_idx = 1 self.count_idx = 1 end
+    if self.batch_idx - 1 == self.nbatches then self.batch_idx = 1 self.cnt_batch_idx = 1 self.count_idx = 1 end
 
-    local idx = self.data.q_train_count_idx_mapping[self.counts[self.count_idx]]
-    if self.cnt_batch_idx * self.batch_size > #idx then
+    if self.cnt_batch_idx * self.batch_size - 1 > self.batch_data.train.question[self.counts[self.count_idx]]:size(1) then
         self.count_idx = self.count_idx + 1
         self.cnt_batch_idx = 1
-        idx = self.data.q_train_count_idx_mapping[self.counts[self.count_idx]]
     end
 
-    question = torch.ShortTensor(self.batch_size, self.counts[self.count_idx])
-    answer = torch.ShortTensor(self.batch_size)
-    image = {}
+    question = self.batch_data.train.question[self.counts[self.count_idx]]:narrow(1, (self.cnt_batch_idx - 1) * self.batch_size + 1, self.batch_size)
+    answer = self.batch_data.train.answer:narrow(1, (self.batch_idx - 1) * self.batch_size + 1, self.batch_size)
+    image = self.batch_data.train.image_feat:narrow(1, (self.batch_idx - 1) * self.batch_size + 1, self.batch_size)
 
-    for i = 1, self.batch_size do
-        question[i] = self.data.train[idx[self.batch_size * (self.cnt_batch_idx - 1) + i]]['question']
-        image[i] = self.data.train[idx[self.batch_size * (self.cnt_batch_idx - 1) + i]]['image_id']
-        answer[i] = self.data.train[idx[self.batch_size * (self.cnt_batch_idx - 1) + i]]['answer']
-    end
-
-    self.cnt_batch_idx = self.cnt_batch_idx + 1
     self.batch_idx = self.batch_idx + 1
+    self.cnt_batch_idx = self.cnt_batch_idx + 1
+
     return question, answer, image
 end
 

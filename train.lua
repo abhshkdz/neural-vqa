@@ -1,8 +1,8 @@
-[[
+--[[
     Torch implementation of the VIS + LSTM model from the paper
     'Exploring Models and Data for Image Question Answering'
     by Mengye Ren, Ryan Kiros & Richard Zemel
-]]
+]]--
 
 require 'torch'
 require 'nn'
@@ -47,10 +47,8 @@ cmd:option('-gpuid', -1, '0-indexed id of GPU to use. -1 = CPU')
 opt = cmd:parse(arg or {})
 torch.manualSeed(opt.seed)
 
-loader = DataLoader.create(opt.data_dir, opt.batch_size)
-
-require 'vtutils'
-opt.gpuid = obtain_gpu_lock_id.get_id()
+-- require 'vtutils'
+-- opt.gpuid = obtain_gpu_lock_id.get_id()
 
 if opt.gpuid >= 0 then
     local ok, cunn = pcall(require, 'cunn')
@@ -68,6 +66,8 @@ if opt.gpuid >= 0 then
         opt.gpuid = -1
     end
 end
+
+loader = DataLoader.create(opt.data_dir, opt.batch_size, opt)
 
 if opt.fc7_file == '0' then
     vgg = loadcaffe.load(opt.proto_file, opt.model_file)
@@ -88,14 +88,6 @@ if opt.fc7_file == '0' then
 
     if opt.gpuid >= 0 then
         vgg_fc7 = vgg_fc7:cuda()
-    end
-else
-    print('Loading fc7 features from ' .. opt.fc7_file)
-    fc7 = torch.load(opt.fc7_file)
-    fc7_image_id = torch.load(opt.fc7_image_id_file)
-    fc7_mapping = {}
-    for i, v in pairs(fc7_image_id) do
-        fc7_mapping[v] = i
     end
 end
 
@@ -137,7 +129,7 @@ print('Batches: ' .. loader.nbatches)
 
 -- initialization
 if do_random_init then
-    params:uniform(-0.08, 0.08) -- small uniform numbers
+    params:uniform(-0.08, 0.08)
 end
 
 init_state = {}
@@ -151,52 +143,36 @@ end
 table.insert(init_state, h_init:clone())
 table.insert(init_state, h_init:clone())
 
+q_length = -1
+
 local init_state_global = utils.clone_list(init_state)
 
 feval = function(x)
+
+    -- local timer = torch.Timer()
 
     if x ~= params then
         params:copy(x)
     end
     grad_params:zero()
 
-    q_batch, a_batch, i_data = loader:next_batch()
+    q_batch, a_batch, i_batch = loader:next_batch()
 
-    clones = {}
-    clones = utils.clone_many_times(lstm, q_batch:size(2) + 1)
-
-    if opt.fc7_file == '0' then
-        img_batch = torch.DoubleTensor(opt.batch_size, 3, 224, 224)
-    else
-        img_batch = torch.DoubleTensor(opt.batch_size, 4096)
-        if opt.gpuid >= 0 then
-            img_batch = img_batch:cuda()
-        end
-    end
-
-    for j = 1, opt.batch_size do
-        if opt.fc7_file == '0' then
-            local fp = path.join(opt.input_image_dir, string.format('train2014/COCO_train2014_%.12d.jpg', i_data[j]))
-            img_batch[j] = utils.preprocess(image.scale(image.load(fp, 3), 224, 224))
-        else
-            img_batch[j] = fc7[fc7_mapping[i_data[j]]]
-        end
-    end
-
-    if opt.gpuid >= 0 then
-        img_batch = img_batch:cuda()
-        q_batch = q_batch:cuda()
-        a_batch = a_batch:cuda()
+    if q_length == -1 or q_length ~= q_batch:size(2) then
+        q_length = q_batch:size(2)
+        clones = {}
+        clones = utils.clone_many_times(lstm, q_length + 1)
     end
 
     qf = ltw:forward(q_batch)
 
-    if opt.fc7_file == '0' then
-        fc7 = vgg_fc7:forward(img_batch)
-        imf = lti:forward(fc7)
-    else
-        imf = lti:forward(img_batch)
-    end
+    imf = lti:forward(i_batch)
+
+    -- cutorch.synchronize()
+    -- local time = timer:time().real
+    -- print("time before forward pass: " .. time)
+
+    -- local timer = torch.Timer()
 
     ------------ forward pass ------------
 
@@ -214,6 +190,12 @@ feval = function(x)
     prediction = sm:forward(lst[#lst])
     loss = criterion:forward(prediction, a_batch)
 
+    -- cutorch.synchronize()
+    -- local time = timer:time().real
+    -- print("time for forward pass: " .. time)
+
+    -- local timer = torch.Timer()
+
     ------------ backward pass ------------
 
     dloss = criterion:backward(prediction, a_batch)
@@ -229,6 +211,10 @@ feval = function(x)
         table.insert(drnn_state[t-1], dlst[3])
     end
 
+    -- cutorch.synchronize()
+    -- local time = timer:time().real
+    -- print("time for backward pass: " .. time)
+
     _, lstm_dparams = lstm:getParameters()
     lstm_dparams:clamp(-5, 5)
 
@@ -240,13 +226,18 @@ local optim_state = {learningRate = opt.learning_rate, alpha = opt.decay_rate}
 
 losses = {}
 iterations = opt.max_epochs * loader.nbatches
+lloss = 0
 for i = 1, iterations do
     _,local_loss = optim.rmsprop(feval, params, optim_state)
     losses[#losses + 1] = local_loss[1]
 
+    lloss = lloss + local_loss[1]
     local epoch = i / loader.nbatches
 
-    print('epoch ' .. epoch .. ' loss ' .. local_loss[1])
+    if i%10 == 0 then
+        print('epoch ' .. epoch .. ' loss ' .. lloss / 10)
+        lloss = 0
+    end
 
     if i % loader.nbatches == 0 and opt.learning_rate_decay < 1 then
         if epoch >= opt.learning_rate_decay_after then
