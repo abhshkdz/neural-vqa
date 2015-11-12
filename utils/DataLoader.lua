@@ -3,7 +3,7 @@
 local DataLoader = {}
 DataLoader.__index = DataLoader
 
-function DataLoader.create(data_dir, batch_size, opt, return_raw_data)
+function DataLoader.create(data_dir, batch_size, opt)
 
     local self = {}
     setmetatable(self, DataLoader)
@@ -44,6 +44,7 @@ function DataLoader.create(data_dir, batch_size, opt, return_raw_data)
 
     print('loading data files...')
     local data = torch.load(tensor_file)
+    self.q_max_length = data.q_max_length
     self.q_vocab_mapping = torch.load(questions_vocab_file)
     self.a_vocab_mapping = torch.load(answers_vocab_file)
     self.q_embeddings = torch.load(embeddings_file)
@@ -58,21 +59,13 @@ function DataLoader.create(data_dir, batch_size, opt, return_raw_data)
         self.a_vocab_size = self.a_vocab_size + 1
     end
 
-    if return_raw_data == true then
-        self.data = data
-        collectgarbage()
-        return self
-    end
-
     self.batch_size = batch_size
-    self.nbatches = 0
+    self.train_nbatches = 0
     self.val_nbatches = 0
-    self.counts = {}
-    self.val_counts = {}
 
     -- Load train into batches
 
-    print('Loading fc7 features from ' .. opt.fc7_file)
+    print('Loading train fc7 features from ' .. opt.fc7_file)
     local fc7 = torch.load(opt.fc7_file)
     local fc7_image_id = torch.load(opt.fc7_image_id_file)
     local fc7_mapping = {}
@@ -82,53 +75,31 @@ function DataLoader.create(data_dir, batch_size, opt, return_raw_data)
 
     self.batch_data = {['train'] = {}, ['val'] = {}}
 
-    local idx = 1
-    for i, v in pairs(data.q_train_count_idx_mapping) do
-        if #v < self.batch_size then
-            data.q_train_count_idx_mapping[i] = nil
-        else
-            self.counts[idx] = i
-            idx = idx + 1
-            if #v % self.batch_size ~= 0 then
-                for j = (#v - #v % self.batch_size + 1), #v do
-                    data.q_train_count_idx_mapping[i][j] = nil
-                end
-            end
-            self.nbatches = self.nbatches + #data.q_train_count_idx_mapping[i] / self.batch_size
-        end
-    end
-
     self.batch_data.train = {
-        ['question'] = {},
-        ['answer'] = torch.ShortTensor(self.batch_size * self.nbatches),
-        ['image_feat'] = torch.DoubleTensor(self.batch_size * self.nbatches, 4096)
+        ['question'] = torch.ShortTensor(self.batch_size * math.floor(#data.train / self.batch_size), data.q_max_length),
+        ['answer'] = torch.ShortTensor(self.batch_size * math.floor(#data.train / self.batch_size)),
+        ['image_feat'] = torch.DoubleTensor(self.batch_size * math.floor(#data.train / self.batch_size), 4096),
+        ['nbatches'] = math.floor(#data.train / self.batch_size)
     }
 
     if opt.gpuid >= 0 then
         self.batch_data.train.image_feat = self.batch_data.train.image_feat:cuda()
     end
 
-    idx = 1
-    for i, v in pairs(data.q_train_count_idx_mapping) do
-        self.batch_data.train.question[i] = torch.ShortTensor(#v, i)
-        for j = 1, #v do
-            self.batch_data.train.question[i][j] = data.train[v[j]]['question']
-            self.batch_data.train.answer[idx] = data.train[v[j]]['answer']
-            self.batch_data.train.image_feat[idx] = fc7[fc7_mapping[data.train[v[j]]['image_id']]]
-            idx = idx + 1
-        end
-        if opt.gpuid >= 0 then
-            self.batch_data.train.question[i] = self.batch_data.train.question[i]:cuda()
-        end
+    for i = 1, self.batch_size * self.batch_data.train.nbatches do
+        self.batch_data.train.question[i] = data.train[i]['question']
+        self.batch_data.train.answer[i] = data.train[i]['answer']
+        self.batch_data.train.image_feat[i] = fc7[fc7_mapping[data.train[i]['image_id']]]
     end
 
     if opt.gpuid >= 0 then
+        self.batch_data.train.question = self.batch_data.train.question:cuda()
         self.batch_data.train.answer = self.batch_data.train.answer:cuda()
     end
 
     -- Load val into batches
 
-    print('Loading fc7 features from ' .. opt.val_fc7_file)
+    print('Loading val fc7 features from ' .. opt.val_fc7_file)
     local fc7 = torch.load(opt.val_fc7_file)
     local fc7_image_id = torch.load(opt.val_fc7_image_id_file)
     local fc7_mapping = {}
@@ -136,57 +107,30 @@ function DataLoader.create(data_dir, batch_size, opt, return_raw_data)
         fc7_mapping[v] = i
     end
 
-    idx = 1
-    for i, v in pairs(data.q_val_count_idx_mapping) do
-        if #v < self.batch_size then
-            data.q_val_count_idx_mapping[i] = nil
-        else
-            self.val_counts[idx] = i
-            idx = idx + 1
-            if #v % self.batch_size ~= 0 then
-                for j = (#v - #v % self.batch_size + 1), #v do
-                    data.q_val_count_idx_mapping[i][j] = nil
-                end
-            end
-            self.val_nbatches = self.val_nbatches + #data.q_val_count_idx_mapping[i] / self.batch_size
-        end
-    end
-
     self.batch_data.val = {
-        ['question'] = {},
-        ['answer'] = torch.ShortTensor(self.batch_size * self.val_nbatches),
-        ['image_feat'] = torch.DoubleTensor(self.batch_size * self.val_nbatches, 4096)
+        ['question'] = torch.ShortTensor(self.batch_size * math.floor(#data.val / self.batch_size), data.q_max_length),
+        ['answer'] = torch.ShortTensor(self.batch_size * math.floor(#data.val / self.batch_size)),
+        ['image_feat'] = torch.DoubleTensor(self.batch_size * math.floor(#data.val / self.batch_size), 4096),
+        ['nbatches'] = math.floor(#data.val / self.batch_size)
     }
 
     if opt.gpuid >= 0 then
         self.batch_data.val.image_feat = self.batch_data.val.image_feat:cuda()
     end
 
-    idx = 1
-    for i, v in pairs(data.q_val_count_idx_mapping) do
-        self.batch_data.val.question[i] = torch.ShortTensor(#v, i)
-        for j = 1, #v do
-            self.batch_data.val.question[i][j] = data.val[v[j]]['question']
-            self.batch_data.val.answer[idx] = data.val[v[j]]['answer']
-            self.batch_data.val.image_feat[idx] = fc7[fc7_mapping[data.val[v[j]]['image_id']]]
-            idx = idx + 1
-        end
-        if opt.gpuid >= 0 then
-            self.batch_data.val.question[i] = self.batch_data.val.question[i]:cuda()
-        end
+    for i = 1, self.batch_size * self.batch_data.val.nbatches do
+        self.batch_data.val.question[i] = data.val[i]['question']
+        self.batch_data.val.answer[i] = data.val[i]['answer']
+        self.batch_data.val.image_feat[i] = fc7[fc7_mapping[data.val[i]['image_id']]]
     end
 
     if opt.gpuid >= 0 then
+        self.batch_data.val.question = self.batch_data.val.question:cuda()
         self.batch_data.val.answer = self.batch_data.val.answer:cuda()
     end
 
-    self.batch_idx = 1
-    self.count_idx = 1
-    self.cnt_batch_idx = 1
-
+    self.train_batch_idx = 1
     self.val_batch_idx = 1
-    self.val_count_idx = 1
-    self.val_cnt_batch_idx = 1
 
     collectgarbage()
     return self
@@ -194,37 +138,22 @@ function DataLoader.create(data_dir, batch_size, opt, return_raw_data)
 end
 
 function DataLoader:next_batch(split)
-    if split == 'val' then
-        if self.val_batch_idx - 1 == self.val_nbatches then self.val_batch_idx = 1 self.val_cnt_batch_idx = 1 self.val_count_idx = 1 end
+    split = split or 'train'
+    if split == 'train' then
+        if self.train_batch_idx - 1 == self.batch_data.train.nbatches then self.train_batch_idx = 1 end
+        local question = self.batch_data.train.question:narrow(1, (self.train_batch_idx - 1) * self.batch_size + 1, self.batch_size)
+        local answer = self.batch_data.train.answer:narrow(1, (self.train_batch_idx - 1) * self.batch_size + 1, self.batch_size)
+        local image = self.batch_data.train.image_feat:narrow(1, (self.train_batch_idx - 1) * self.batch_size + 1, self.batch_size)
 
-        if self.val_cnt_batch_idx * self.batch_size - 1 > self.batch_data.val.question[self.val_counts[self.val_count_idx]]:size(1) then
-            self.val_count_idx = self.val_count_idx + 1
-            self.val_cnt_batch_idx = 1
-        end
-
-        question = self.batch_data.val.question[self.val_counts[self.val_count_idx]]:narrow(1, (self.val_cnt_batch_idx - 1) * self.batch_size + 1, self.batch_size)
-        answer = self.batch_data.val.answer:narrow(1, (self.val_batch_idx - 1) * self.batch_size + 1, self.batch_size)
-        image = self.batch_data.val.image_feat:narrow(1, (self.val_batch_idx - 1) * self.batch_size + 1, self.batch_size)
-
-        self.val_batch_idx = self.val_batch_idx + 1
-        self.val_cnt_batch_idx = self.val_cnt_batch_idx + 1
-
+        self.train_batch_idx = self.train_batch_idx + 1
         return question, answer, image
     else
-        if self.batch_idx - 1 == self.nbatches then self.batch_idx = 1 self.cnt_batch_idx = 1 self.count_idx = 1 end
+        if self.val_batch_idx - 1 == self.batch_data.val.nbatches then self.val_batch_idx = 1 end
+        local question = self.batch_data.val.question:narrow(1, (self.val_batch_idx - 1) * self.batch_size + 1, self.batch_size)
+        local answer = self.batch_data.val.answer:narrow(1, (self.val_batch_idx - 1) * self.batch_size + 1, self.batch_size)
+        local image = self.batch_data.val.image_feat:narrow(1, (self.val_batch_idx - 1) * self.batch_size + 1, self.batch_size)
 
-        if self.cnt_batch_idx * self.batch_size - 1 > self.batch_data.train.question[self.counts[self.count_idx]]:size(1) then
-            self.count_idx = self.count_idx + 1
-            self.cnt_batch_idx = 1
-        end
-
-        question = self.batch_data.train.question[self.counts[self.count_idx]]:narrow(1, (self.cnt_batch_idx - 1) * self.batch_size + 1, self.batch_size)
-        answer = self.batch_data.train.answer:narrow(1, (self.batch_idx - 1) * self.batch_size + 1, self.batch_size)
-        image = self.batch_data.train.image_feat:narrow(1, (self.batch_idx - 1) * self.batch_size + 1, self.batch_size)
-
-        self.batch_idx = self.batch_idx + 1
-        self.cnt_batch_idx = self.cnt_batch_idx + 1
-
+        self.val_batch_idx = self.val_batch_idx + 1
         return question, answer, image
     end
 end
@@ -295,39 +224,35 @@ function DataLoader.json_to_tensor(in_train_q, in_train_a, in_val_q, in_val_a, o
     f:close()
 
     unordered = {}
-
-    local q_train_count_idx_mapping = {}
-    local q_val_count_idx_mapping = {}
+    max_length = 0
 
     for i = 1, #train_q['questions'] do
         local count = 0
-        for token in word_iter(train_q['questions'][i]['question']) do
-            if not unordered[token] then
-                unordered[token] = 1
-            else
-                unordered[token] = unordered[token] + 1
-            end
-            count = count + 1
-        end
         if a_vocab_mapping[train_a['annotations'][i]['multiple_choice_answer']] then
-            if not q_train_count_idx_mapping[count] then q_train_count_idx_mapping[count] = {} end
-            q_train_count_idx_mapping[count][#q_train_count_idx_mapping[count]+1] = i
+            for token in word_iter(train_q['questions'][i]['question']) do
+                if not unordered[token] then
+                    unordered[token] = 1
+                else
+                    unordered[token] = unordered[token] + 1
+                end
+                count = count + 1
+            end
+            if count > max_length then max_length = count end
         end
     end
 
     for i = 1, #val_q['questions'] do
         local count = 0
-        for token in word_iter(val_q['questions'][i]['question']) do
-            if not unordered[token] then
-                unordered[token] = 1
-            else
-                unordered[token] = unordered[token] + 1
-            end
-            count = count + 1
-        end
         if a_vocab_mapping[val_a['annotations'][i]['multiple_choice_answer']] then
-            if not q_val_count_idx_mapping[count] then q_val_count_idx_mapping[count] = {} end
-            q_val_count_idx_mapping[count][#q_val_count_idx_mapping[count]+1] = i
+            for token in word_iter(val_q['questions'][i]['question']) do
+                if not unordered[token] then
+                    unordered[token] = 1
+                else
+                    unordered[token] = unordered[token] + 1
+                end
+                count = count + 1
+            end
+            if count > max_length then max_length = count end
         end
     end
 
@@ -353,46 +278,51 @@ function DataLoader.json_to_tensor(in_train_q, in_train_a, in_val_q, in_val_a, o
     local data = {
         train = {},
         val = {},
-        q_train_count_idx_mapping = q_train_count_idx_mapping,
-        q_val_count_idx_mapping = q_val_count_idx_mapping
+        q_max_length = max_length
     }
 
+    local idx = 1
+
     for i = 1, #train_q['questions'] do
-        -- if a_vocab_mapping[train_a['annotations'][i]['multiple_choice_answer']] then
+        if a_vocab_mapping[train_a['annotations'][i]['multiple_choice_answer']] then
             local question = {}
             local wl = 0
             for token in word_iter(train_q['questions'][i]['question']) do
                 wl = wl + 1
                 question[wl] = q_vocab_mapping[token] or q_vocab_mapping["UNK"]
             end
-            data.train[i] = {
+            data.train[idx] = {
                 image_id = train_a['annotations'][i]['image_id'],
-                question = torch.ShortTensor(wl),
+                question = torch.ShortTensor(max_length):zero(),
                 answer = a_vocab_mapping[train_a['annotations'][i]['multiple_choice_answer']]
             }
             for j = 1, wl do
-                data.train[i]['question'][j] = question[j]
+                data.train[idx]['question'][max_length - wl + j] = question[j]
             end
-        -- end
+            idx = idx + 1
+        end
     end
 
+    idx = 1
+
     for i = 1, #val_q['questions'] do
-        -- if a_vocab_mapping[val_a['annotations'][i]['multiple_choice_answer']] then
+        if a_vocab_mapping[val_a['annotations'][i]['multiple_choice_answer']] then
             local question = {}
             local wl = 0
             for token in word_iter(val_q['questions'][i]['question']) do
                 wl = wl + 1
                 question[wl] = q_vocab_mapping[token] or q_vocab_mapping["UNK"]
             end
-            data.val[i] = {
+            data.val[idx] = {
                 image_id = val_a['annotations'][i]['image_id'],
-                question = torch.ShortTensor(wl),
+                question = torch.ShortTensor(max_length):zero(),
                 answer = a_vocab_mapping[val_a['annotations'][i]['multiple_choice_answer']]
             }
             for j = 1, wl do
-                data.val[i]['question'][j] = question[j]
+                data.val[idx]['question'][max_length - wl + j] = question[j]
             end
-        -- end
+            idx = idx + 1
+        end
     end
 
     -- save output preprocessed files
