@@ -173,6 +173,10 @@ feval_val = function(max_batches)
 
         imf = lti:forward(i_batch)
 
+        if opt.gpuid >= 0 then
+            imf = imf:cuda()
+        end
+
         rnn_state = {[0] = init_state_global}
         loss = 0
         lst = clones[1]:forward{imf, unpack(rnn_state[0])}
@@ -218,6 +222,10 @@ feval = function(x)
 
     imf = lti:forward(i_batch)
 
+    if opt.gpuid >= 0 then
+        imf = imf:cuda()
+    end
+
     ------------ forward pass ------------
 
     rnn_state = {[0] = init_state_global}
@@ -239,15 +247,18 @@ feval = function(x)
     dloss = criterion:backward(prediction, a_batch)
     doutput_t = sm:backward(lst[#lst], dloss)
 
-    drnn_state = {[loader.counts[loader.count_idx] + 1] = utils.clone_list(init_state, true)}
-    drnn_state[loader.counts[loader.count_idx] + 1][2] = doutput_t
+    drnn_state = {[q_length + 1] = utils.clone_list(init_state, true)}
+    drnn_state[q_length + 1][2] = doutput_t
 
-    for t = loader.counts[loader.count_idx] + 1, 2, -1 do
+    for t = q_length + 1, 2, -1 do
         dlst = clones[t]:backward({qf:select(2, t-1), unpack(rnn_state[t-1])}, drnn_state[t])
         drnn_state[t-1] = {}
         table.insert(drnn_state[t-1], dlst[2])
         table.insert(drnn_state[t-1], dlst[3])
     end
+
+    dlst = clones[1]:backward({imf, unpack(rnn_state[0])}, drnn_state[1])
+    lti:backward(i_batch, dlst[1])
 
     _, lstm_dparams = lstm:getParameters()
     lstm_dparams:clamp(-5, 5)
