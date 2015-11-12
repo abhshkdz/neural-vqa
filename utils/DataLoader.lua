@@ -3,7 +3,7 @@
 local DataLoader = {}
 DataLoader.__index = DataLoader
 
-function DataLoader.create(data_dir, batch_size, opt)
+function DataLoader.create(data_dir, batch_size, opt, return_raw_data)
 
     local self = {}
     setmetatable(self, DataLoader)
@@ -44,6 +44,12 @@ function DataLoader.create(data_dir, batch_size, opt)
 
     print('Loading data files...')
     local data = torch.load(tensor_file)
+    if return_raw_data == true then
+        self.data = data
+        collectgarbage()
+        return self
+    end
+
     self.q_max_length = data.q_max_length
     self.q_vocab_mapping = torch.load(questions_vocab_file)
     self.a_vocab_mapping = torch.load(answers_vocab_file)
@@ -65,9 +71,9 @@ function DataLoader.create(data_dir, batch_size, opt)
 
     -- Load train into batches
 
-    print('Loading train fc7 features from ' .. opt.fc7_file)
-    local fc7 = torch.load(opt.fc7_file)
-    local fc7_image_id = torch.load(opt.fc7_image_id_file)
+    print('Loading train fc7 features from ' .. opt.train_fc7_file)
+    local fc7 = torch.load(opt.train_fc7_file)
+    local fc7_image_id = torch.load(opt.train_fc7_image_id_file)
     local fc7_mapping = {}
     for i, v in pairs(fc7_image_id) do
         fc7_mapping[v] = i

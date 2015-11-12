@@ -14,15 +14,15 @@ cmd:text('Options')
 cmd:option('-batch_size', 10, 'batch size')
 cmd:option('-split', 'train', 'train/val')
 cmd:option('-debug', 0, 'set debug = 1 for lots of prints')
--- gpu/cpu
-cmd:option('-gpuid', -1, '0-indexed id of GPU to use. -1 = CPU')
 -- bookkeeping
 cmd:option('-seed', 981723, 'Torch manual random number generator seed')
 cmd:option('-proto_file', 'models/VGG_ILSVRC_19_layers_deploy.prototxt')
 cmd:option('-model_file', 'models/VGG_ILSVRC_19_layers.caffemodel')
-cmd:option('-data_dir', 'data', 'data directory.')
+cmd:option('-data_dir', 'data', 'Data directory.')
 cmd:option('-feat_layer', 'fc7', 'Layer to extract features from')
-cmd:option('-input_image_dir', 'data')
+cmd:option('-input_image_dir', 'data', 'Image directory')
+-- gpu/cpu
+cmd:option('-gpuid', -1, '0-indexed id of GPU to use. -1 = CPU')
 
 opt = cmd:parse(arg or {})
 torch.manualSeed(opt.seed)
@@ -80,11 +80,6 @@ for i, v in pairs(tmp_image_id) do
     image_id[idx] = i
     idx = idx + 1
 end
-
--- min = 12
--- for i = min+1, #image_id do
---     image_id[i] = nil
--- end
 
 fc7 = torch.DoubleTensor(#image_id, 4096)
 idx = 1
