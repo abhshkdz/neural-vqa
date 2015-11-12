@@ -42,7 +42,7 @@ function DataLoader.create(data_dir, batch_size, opt)
         DataLoader.json_to_tensor(train_questions_file, train_annotations_file, val_questions_file, val_annotations_file, questions_vocab_file, answers_vocab_file, tensor_file)
     end
 
-    print('loading data files...')
+    print('Loading data files...')
     local data = torch.load(tensor_file)
     self.q_max_length = data.q_max_length
     self.q_vocab_mapping = torch.load(questions_vocab_file)

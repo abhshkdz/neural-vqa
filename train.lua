@@ -19,20 +19,18 @@ local LSTM = require 'lstm'
 cmd = torch.CmdLine()
 cmd:text('Options')
 
-cmd:option('-data_dir', 'data', 'data directory')
-cmd:option('-checkpoint_dir', 'checkpoints', 'data directory')
-cmd:option('-savefile', 'vqa', 'filename to save checkpoint to')
 -- model params
 cmd:option('-rnn_size', 1024, 'size of LSTM internal state')
 cmd:option('-embedding_size', 200, 'size of word embeddings')
 -- optimization
-cmd:option('-learning_rate', 2e-3, 'learning rate')
-cmd:option('-learning_rate_decay', 0.97, 'learning rate decay')
-cmd:option('-learning_rate_decay_after', 10, 'in number of epochs, when to start decaying the learning rate')
+cmd:option('-learning_rate', 5e-4, 'learning rate')
+cmd:option('-learning_rate_decay', 0.95, 'learning rate decay')
+cmd:option('-learning_rate_decay_after', 5, 'in number of epochs, when to start decaying the learning rate')
 cmd:option('-decay_rate', 0.95, 'decay rate for rmsprop')
 cmd:option('-batch_size', 64, 'batch size')
 cmd:option('-max_epochs', 50, 'number of full passes through the training data')
 cmd:option('-dropout', 0.5, 'dropout')
+cmd:option('-init_from', '', 'initialize network parameters from checkpoint at this path')
 -- bookkeeping
 cmd:option('-seed', 981723, 'Torch manual random number generator seed')
 cmd:option('-save_every', 1000, 'No. of iterations after which to checkpoint')
@@ -40,10 +38,13 @@ cmd:option('-proto_file', 'models/VGG_ILSVRC_19_layers_deploy.prototxt')
 cmd:option('-model_file', 'models/VGG_ILSVRC_19_layers.caffemodel')
 cmd:option('-feat_layer', 'fc7', 'Layer to extract features from, for input to LSTM')
 cmd:option('-input_image_dir', 'data')
-cmd:option('-fc7_file', '0', 'Path to fc7 features')
-cmd:option('-fc7_image_id_file', '0', 'Path to fc7 image ids')
-cmd:option('-val_fc7_file', '0', 'Path to fc7 features')
-cmd:option('-val_fc7_image_id_file', '0', 'Path to fc7 image ids')
+cmd:option('-fc7_file', '', 'Path to fc7 features')
+cmd:option('-fc7_image_id_file', '', 'Path to fc7 image ids')
+cmd:option('-val_fc7_file', '', 'Path to fc7 features')
+cmd:option('-val_fc7_image_id_file', '', 'Path to fc7 image ids')
+cmd:option('-data_dir', 'data', 'data directory')
+cmd:option('-checkpoint_dir', 'checkpoints', 'data directory')
+cmd:option('-savefile', 'vqa', 'filename to save checkpoint to')
 -- gpu/cpu
 cmd:option('-gpuid', -1, '0-indexed id of GPU to use. -1 = CPU')
 
@@ -70,45 +71,35 @@ if opt.gpuid >= 0 then
     end
 end
 
-loader = DataLoader.create(opt.data_dir, opt.batch_size, opt)
+local loader = DataLoader.create(opt.data_dir, opt.batch_size, opt)
 
-if opt.fc7_file == '0' then
-    vgg = loadcaffe.load(opt.proto_file, opt.model_file)
-    if opt.gpuid >= 0 then
-        vgg = vgg:cuda()
-    end
+local do_random_init = true
+if string.len(opt.init_from) > 0 then
+    print('Loading model from checkpoint ' .. opt.init_from)
+    local checkpoint = torch.load(opt.init_from)
+    local protos = checkpoint.protos
+    ltw = protos.ltw
+    lti = protos.lti
+    lstm = protos.lstm
+    sm = protos.sm
+    do_random_init = false
+else
+    ltw = nn.Sequential()
+    ltw:add(nn.LookupTable(loader.q_vocab_size, opt.embedding_size))
+    ltw:get(1).weight = loader.q_embeddings:clone()
+    ltw:add(nn.Dropout(opt.dropout))
 
-    vgg_fc7 = nn.Sequential()
+    lti = nn.Sequential()
+    lti:add(nn.Linear(4096, opt.embedding_size))
+    lti:add(nn.Tanh())
+    lti:add(nn.Dropout(opt.dropout))
 
-    for i = 1, #vgg.modules do
-        local layer = vgg:get(i)
-        local name = layer.name
-        vgg_fc7:add(layer)
-        if name == opt.feat_layer then
-            break
-        end
-    end
+    lstm = LSTM.create(opt.embedding_size, opt.rnn_size)
 
-    if opt.gpuid >= 0 then
-        vgg_fc7 = vgg_fc7:cuda()
-    end
+    sm = nn.Sequential()
+    sm:add(nn.Linear(opt.rnn_size, loader.a_vocab_size))
+    sm:add(nn.LogSoftMax())
 end
-
-ltw = nn.Sequential()
-ltw:add(nn.LookupTable(loader.q_vocab_size, opt.embedding_size))
-ltw:get(1).weight = loader.q_embeddings:clone()
-ltw:add(nn.Dropout(opt.dropout))
-
-lti = nn.Sequential()
-lti:add(nn.Linear(4096, opt.embedding_size))
-lti:add(nn.Tanh())
-lti:add(nn.Dropout(opt.dropout))
-
-lstm = LSTM.create(opt.embedding_size, opt.rnn_size)
-
-sm = nn.Sequential()
-sm:add(nn.Linear(opt.rnn_size, loader.a_vocab_size))
-sm:add(nn.LogSoftMax())
 
 -- model combines all 'trainable' parameters
 model = nn.Sequential()
@@ -157,7 +148,7 @@ local init_state_global = utils.clone_list(init_state)
 feval_val = function(max_batches)
 
     count = 0
-    n = loader.data_batch.val.nbatches
+    n = loader.batch_data.val.nbatches
     if max_batches ~= nil then n = math.min(n, max_batches) end
 
     for i = 1, n do
