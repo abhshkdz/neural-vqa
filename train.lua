@@ -147,6 +147,9 @@ feval_val = function(max_batches)
     n = loader.batch_data.val.nbatches
     if max_batches ~= nil then n = math.min(n, max_batches) end
 
+    ltw:evaluate()
+    lti:evaluate()
+
     for i = 1, n do
 
         q_batch, a_batch, i_batch = loader:next_batch('val')
@@ -180,6 +183,9 @@ feval_val = function(max_batches)
         end
 
     end
+
+    ltw:training()
+    lti:training()
 
     return count / (n * opt.batch_size)
 
