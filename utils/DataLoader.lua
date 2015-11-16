@@ -3,7 +3,7 @@
 local DataLoader = {}
 DataLoader.__index = DataLoader
 
-function DataLoader.create(data_dir, batch_size, opt, return_raw_data)
+function DataLoader.create(data_dir, batch_size, opt, mode)
 
     local self = {}
     setmetatable(self, DataLoader)
@@ -44,7 +44,7 @@ function DataLoader.create(data_dir, batch_size, opt, return_raw_data)
 
     print('Loading data files...')
     local data = torch.load(tensor_file)
-    if return_raw_data == true then
+    if mode == 'fc7_feat' then
         self.data = data
         collectgarbage()
         return self
@@ -53,8 +53,7 @@ function DataLoader.create(data_dir, batch_size, opt, return_raw_data)
     self.q_max_length = data.q_max_length
     self.q_vocab_mapping = torch.load(questions_vocab_file)
     self.a_vocab_mapping = torch.load(answers_vocab_file)
-    self.q_embeddings = torch.load(embeddings_file)
-
+    
     self.q_vocab_size = 0
     for _ in pairs(self.q_vocab_mapping) do
         self.q_vocab_size = self.q_vocab_size + 1
@@ -64,8 +63,16 @@ function DataLoader.create(data_dir, batch_size, opt, return_raw_data)
     for _ in pairs(self.a_vocab_mapping) do
         self.a_vocab_size = self.a_vocab_size + 1
     end
-
+    
     self.batch_size = batch_size
+    
+    if mode == 'predict' then
+        collectgarbage()
+        return self
+    end
+
+    self.q_embeddings = torch.load(embeddings_file)
+
     self.train_nbatches = 0
     self.val_nbatches = 0
 

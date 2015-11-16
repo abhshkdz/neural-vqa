@@ -5,6 +5,8 @@ VIS + LSTM visual question answering model from the paper
 [Exploring Models and Data for Image Question Answering][2]
 by Mengye Ren, Ryan Kiros & Richard Zemel.
 
+![Model architecture](http://i.imgur.com/UXAPlqe.png)
+
 ## Setup
 
 Requirements:
@@ -12,7 +14,7 @@ Requirements:
 - [Torch][10]
 - [loadcaffe][9]
 
-Download the MSCOCO train+val images and [VQA][1] data using `sh data/download_data.sh`.
+Download the [MSCOCO][11] train+val images and [VQA][1] data using `sh data/download_data.sh`.
 If you have them downloaded, copy over the `train2014` and `val2014` image folders
 and VQA JSON files to the `data` folder.
 
@@ -56,7 +58,7 @@ th train.lua
 
 - `rnn_size`: Size of LSTM internal state. Default is 1024.
 - `embedding_size`: Size of word embeddings. Default is 200.
-- `learning_rate`: Learning rate. Default is 5e-4.
+- `learning_rate`: Learning rate. Default is 1e-4.
 - `learning_rate_decay`: Learning rate decay factor. Default is 0.95.
 - `learning_rate_decay_after`: In number of epochs, when to start decaying the learning rate. Default is 10.
 - `decay_rate`: Decay rate for RMSProp. Default is 0.95.
@@ -74,6 +76,72 @@ th train.lua
 - `savefile`: Filename to save checkpoint to. Default is `vqa`.
 - `gpuid`: 0-indexed id of GPU to use. Default is -1 = CPU.
 
+### Testing
+
+```
+th predict.lua -checkpoint_file checkpoints/lr1e-4b64_epoch17.25_0.5063.t7 -input_image_path data/train2014/COCO_train2014_000000405541.jpg -question 'What is the cat on?'
+```
+
+#### Options
+
+- `checkpoint_file`: Path to model checkpoint to initialize network parameters fro
+- `input_image_path`: Path to input image
+- `question`: Question string
+
+## Sample predictions
+
+Randomly sampled image-question pairs from the VQA test set,
+and answers predicted by the VIS+LSTM model.
+
+![](http://i.imgur.com/V3nHbo9.jpg)
+
+Q: What animals are those?  
+A: Sheep
+
+![](http://i.imgur.com/QRBi6qb.jpg)
+
+Q: What color is the frisbee that's upside down?  
+A: Red
+
+![](http://i.imgur.com/tiOqJfH.jpg)
+
+Q: What is flying in the sky?  
+A: Kite
+
+![](http://i.imgur.com/4ZmOoUF.jpg)
+
+Q: What color is court?  
+A: Blue
+
+![](http://i.imgur.com/1D6NxvD.jpg)
+
+Q: What is in the standing person's hands?  
+A: Bat
+
+![](http://i.imgur.com/tY9BT1I.jpg)
+
+Q: Are they riding horses both the same color?  
+A: No
+
+![](http://i.imgur.com/hzwj0NS.jpg)
+
+Q: What shape is the plate?  
+A: Round
+
+![](http://i.imgur.com/n1Kn1vZ.jpg)
+
+Q: Is the man wearing socks?  
+A: Yes
+
+![](http://i.imgur.com/dXhNKP6.jpg)
+
+Q: What is over the woman's left shoulder?  
+A: Fork
+
+![](http://i.imgur.com/thzv03r.jpg)
+
+Q: Where are the pink flowers?  
+A: On wall
 
 ## Implementation Details
 
@@ -82,6 +150,17 @@ th train.lua
 - Zero-padded question sequences for batched implementation
 - Training questions are filtered for `top_n` answers,
 `top_n = 1000` by default (~87% coverage)
+
+## Pretrained model and data files
+
+To reproduce results shown on this page or try your own 
+image-question pairs, download the following and run
+`predict.lua` with the appropriate paths.
+
+- [lr1e-4b64\_epoch16.65\_0.5064.t7](https://dl.dropboxusercontent.com/u/19398876/neural-vqa/lr1e-4b64_epoch16.65_0.5064.t7)
+- [answers_vocab.t7](https://dl.dropboxusercontent.com/u/19398876/neural-vqa/answers_vocab.t7)
+- [questions_vocab.t7](https://dl.dropboxusercontent.com/u/19398876/neural-vqa/questions_vocab.t7)
+- [data.t7](https://dl.dropboxusercontent.com/u/19398876/neural-vqa/data.t7)
 
 [1]: http://visualqa.org/
 [2]: http://arxiv.org/abs/1505.02074
@@ -93,3 +172,4 @@ th train.lua
 [8]: https://github.com/facebook/luaffifb
 [9]: https://github.com/szagoruyko/loadcaffe
 [10]: http://torch.ch/
+[11]: http://mscoco.org/

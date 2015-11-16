@@ -27,9 +27,6 @@ cmd:option('-gpuid', -1, '0-indexed id of GPU to use. -1 = CPU')
 opt = cmd:parse(arg or {})
 torch.manualSeed(opt.seed)
 
-require 'vtutils'
-opt.gpuid = obtain_gpu_lock_id.get_id()
-
 if opt.gpuid >= 0 then
     local ok, cunn = pcall(require, 'cunn')
     local ok2, cutorch = pcall(require, 'cutorch')
@@ -47,7 +44,7 @@ if opt.gpuid >= 0 then
     end
 end
 
-loader = DataLoader.create(opt.data_dir, opt.batch_size, opt, true)
+loader = DataLoader.create(opt.data_dir, opt.batch_size, opt, 'fc7_feat')
 
 cnn = loadcaffe.load(opt.proto_file, opt.model_file)
 if opt.gpuid >= 0 then

@@ -29,9 +29,6 @@ cmd:option('-gpuid', -1, '0-indexed id of GPU to use. -1 = CPU')
 opt = cmd:parse(arg or {})
 torch.manualSeed(opt.seed)
 
-require 'vtutils'
-opt.gpuid = obtain_gpu_lock_id.get_id()
-
 if opt.gpuid >= 0 then
     local ok, cunn = pcall(require, 'cunn')
     local ok2, cutorch = pcall(require, 'cutorch')

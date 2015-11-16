@@ -45,9 +45,6 @@ cmd:option('-gpuid', -1, '0-indexed id of GPU to use. -1 = CPU')
 opt = cmd:parse(arg or {})
 torch.manualSeed(opt.seed)
 
-require 'vtutils'
-opt.gpuid = obtain_gpu_lock_id.get_id()
-
 if opt.gpuid >= 0 then
     local ok, cunn = pcall(require, 'cunn')
     local ok2, cutorch = pcall(require, 'cutorch')
@@ -80,7 +77,7 @@ else
 
     protos.ltw = nn.Sequential()
     protos.ltw:add(nn.LookupTable(loader.q_vocab_size, opt.embedding_size))
-    protos.ltw:get(1).weight:copy(loader.q_embeddings)
+    protos.ltw:get(1).weight = loader.q_embeddings:clone()
     protos.ltw:add(nn.Dropout(opt.dropout))
 
     protos.lti = nn.Sequential()
@@ -103,9 +100,6 @@ else
         protos.sm = protos.sm:cuda()
         protos.criterion = protos.criterion:cuda()
     end
-
-    protos.clones = {}
-    protos.clones['lstm'] = utils.clone_many_times(protos.lstm, loader.q_max_length + 1)
 end
 
 -- put the above things into one flattened parameters tensor
@@ -120,6 +114,11 @@ if do_random_init then
 end
 
 init_state = {}
+
+if not protos.clones then
+    protos.clones = {}
+    protos.clones['lstm'] = utils.clone_many_times(protos.lstm, loader.q_max_length + 1)
+end
 
 local h_init = torch.zeros(opt.batch_size, opt.rnn_size)
 
