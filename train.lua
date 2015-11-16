@@ -8,12 +8,10 @@ require 'torch'
 require 'nn'
 require 'nngraph'
 require 'optim'
-require 'image'
 
 local utils = require 'utils.misc'
 local DataLoader = require 'utils.DataLoader'
 
-require 'loadcaffe_wrapper'
 local LSTM = require 'lstm'
 
 cmd = torch.CmdLine()
@@ -23,7 +21,7 @@ cmd:text('Options')
 cmd:option('-rnn_size', 1024, 'Size of LSTM internal state')
 cmd:option('-embedding_size', 200, 'Size of word embeddings')
 -- optimization
-cmd:option('-learning_rate', 5e-4, 'Learning rate')
+cmd:option('-learning_rate', 1e-4, 'Learning rate')
 cmd:option('-learning_rate_decay', 0.95, 'Learning rate decay')
 cmd:option('-learning_rate_decay_after', 10, 'In number of epochs, when to start decaying the learning rate')
 cmd:option('-decay_rate', 0.95, 'Decay rate for rmsprop')
@@ -69,53 +67,49 @@ end
 
 local loader = DataLoader.create(opt.data_dir, opt.batch_size, opt)
 
+if not path.exists(opt.checkpoint_dir) then lfs.mkdir(opt.checkpoint_dir) end
+
 local do_random_init = true
 if string.len(opt.init_from) > 0 then
     print('Loading model from checkpoint ' .. opt.init_from)
     local checkpoint = torch.load(opt.init_from)
-    local protos = checkpoint.protos
-    ltw = protos.ltw
-    lti = protos.lti
-    lstm = protos.lstm
-    sm = protos.sm
+    protos = checkpoint.protos
     do_random_init = false
 else
-    ltw = nn.Sequential()
-    ltw:add(nn.LookupTable(loader.q_vocab_size, opt.embedding_size))
-    ltw:get(1).weight = loader.q_embeddings:clone()
-    ltw:add(nn.Dropout(opt.dropout))
+    protos = {}
 
-    lti = nn.Sequential()
-    lti:add(nn.Linear(4096, opt.embedding_size))
-    lti:add(nn.Tanh())
-    lti:add(nn.Dropout(opt.dropout))
+    protos.ltw = nn.Sequential()
+    protos.ltw:add(nn.LookupTable(loader.q_vocab_size, opt.embedding_size))
+    protos.ltw:get(1).weight:copy(loader.q_embeddings)
+    protos.ltw:add(nn.Dropout(opt.dropout))
 
-    lstm = LSTM.create(opt.embedding_size, opt.rnn_size)
+    protos.lti = nn.Sequential()
+    protos.lti:add(nn.Linear(4096, opt.embedding_size))
+    protos.lti:add(nn.Tanh())
+    protos.lti:add(nn.Dropout(opt.dropout))
 
-    sm = nn.Sequential()
-    sm:add(nn.Linear(opt.rnn_size, loader.a_vocab_size))
-    sm:add(nn.LogSoftMax())
-end
+    protos.lstm = LSTM.create(opt.embedding_size, opt.rnn_size)
 
--- model combines all 'trainable' parameters
-model = nn.Sequential()
-model:add(lti)
-model:add(lstm)
-model:add(sm)
+    protos.sm = nn.Sequential()
+    protos.sm:add(nn.Linear(opt.rnn_size, loader.a_vocab_size))
+    protos.sm:add(nn.LogSoftMax())
 
-criterion = nn.ClassNLLCriterion()
+    protos.criterion = nn.ClassNLLCriterion()
 
-if opt.gpuid >= 0 then
-    ltw = ltw:cuda()
-    lti = lti:cuda()
-    lstm = lstm:cuda()
-    sm = sm:cuda()
-    model = model:cuda()
-    criterion = criterion:cuda()
+    if opt.gpuid >= 0 then
+        protos.ltw = protos.ltw:cuda()
+        protos.lti = protos.lti:cuda()
+        protos.lstm = protos.lstm:cuda()
+        protos.sm = protos.sm:cuda()
+        protos.criterion = protos.criterion:cuda()
+    end
+
+    protos.clones = {}
+    protos.clones['lstm'] = utils.clone_many_times(protos.lstm, loader.q_max_length + 1)
 end
 
 -- put the above things into one flattened parameters tensor
-params, grad_params = utils.combine_all_parameters(model)
+params, grad_params = utils.combine_all_parameters(protos.lti, protos.lstm, protos.sm)
 
 print('Parameters: ' .. params:size(1))
 print('Batches: ' .. loader.batch_data.train.nbatches)
@@ -136,9 +130,6 @@ end
 table.insert(init_state, h_init:clone())
 table.insert(init_state, h_init:clone())
 
-clones = {}
-clones = utils.clone_many_times(lstm, loader.q_max_length + 1)
-
 local init_state_global = utils.clone_list(init_state)
 
 feval_val = function(max_batches)
@@ -147,33 +138,32 @@ feval_val = function(max_batches)
     n = loader.batch_data.val.nbatches
     if max_batches ~= nil then n = math.min(n, max_batches) end
 
-    ltw:evaluate()
-    lti:evaluate()
+    protos.ltw:evaluate()
+    protos.lti:evaluate()
 
     for i = 1, n do
 
         q_batch, a_batch, i_batch = loader:next_batch('val')
 
-        qf = ltw:forward(q_batch)
+        qf = protos.ltw:forward(q_batch)
 
-        imf = lti:forward(i_batch)
+        imf = protos.lti:forward(i_batch)
 
         if opt.gpuid >= 0 then
             imf = imf:cuda()
         end
 
-        loss = 0
         rnn_state = {[0] = init_state_global}
 
         for t = 1, loader.q_max_length do
-            lst = clones[t]:forward{qf:select(2,t), unpack(rnn_state[t-1])}
+            lst = protos.clones.lstm[t]:forward{qf:select(2,t), unpack(rnn_state[t-1])}
             rnn_state[t] = {}
             for i = 1, #init_state do table.insert(rnn_state[t], lst[i]) end
         end
 
-        lst = clones[loader.q_max_length + 1]:forward{imf, unpack(rnn_state[loader.q_max_length])}
+        lst = protos.clones.lstm[loader.q_max_length+1]:forward{imf, unpack(rnn_state[loader.q_max_length])}
 
-        prediction = sm:forward(lst[#lst])
+        prediction = protos.sm:forward(lst[#lst])
 
         _, idx  = prediction:max(2)
         for j = 1, opt.batch_size do
@@ -184,8 +174,8 @@ feval_val = function(max_batches)
 
     end
 
-    ltw:training()
-    lti:training()
+    protos.ltw:training()
+    protos.lti:training()
 
     return count / (n * opt.batch_size)
 
@@ -200,9 +190,9 @@ feval = function(x)
 
     q_batch, a_batch, i_batch = loader:next_batch()
 
-    qf = ltw:forward(q_batch)
+    qf = protos.ltw:forward(q_batch)
 
-    imf = lti:forward(i_batch)
+    imf = protos.lti:forward(i_batch)
 
     if opt.gpuid >= 0 then
         imf = imf:cuda()
@@ -214,41 +204,51 @@ feval = function(x)
     rnn_state = {[0] = init_state_global}
 
     for t = 1, loader.q_max_length do
-        lst = clones[t]:forward{qf:select(2,t), unpack(rnn_state[t-1])}
+        lst = protos.clones.lstm[t]:forward{qf:select(2,t), unpack(rnn_state[t-1])}
         rnn_state[t] = {}
         for i = 1, #init_state do table.insert(rnn_state[t], lst[i]) end
     end
 
-    lst = clones[loader.q_max_length + 1]:forward{imf, unpack(rnn_state[loader.q_max_length])}
+    lst = protos.clones.lstm[loader.q_max_length + 1]:forward{imf, unpack(rnn_state[loader.q_max_length])}
 
-    prediction = sm:forward(lst[#lst])
+    prediction = protos.sm:forward(lst[#lst])
 
-    loss = criterion:forward(prediction, a_batch)
+    loss = protos.criterion:forward(prediction, a_batch)
 
     ------------ backward pass ------------
 
-    dloss = criterion:backward(prediction, a_batch)
-    doutput_t = sm:backward(lst[#lst], dloss)
+    dloss = protos.criterion:backward(prediction, a_batch)
+    doutput_t = protos.sm:backward(lst[#lst], dloss)
 
     drnn_state = {[loader.q_max_length + 1] = utils.clone_list(init_state, true)}
     drnn_state[loader.q_max_length + 1][2] = doutput_t
 
-    dlst = clones[loader.q_max_length + 1]:backward({imf, unpack(rnn_state[loader.q_max_length])}, drnn_state[loader.q_max_length + 1])
+    dlst = protos.clones.lstm[loader.q_max_length + 1]:backward({imf, unpack(rnn_state[loader.q_max_length])}, drnn_state[loader.q_max_length + 1])
+
+    protos.lti:backward(i_batch, dlst[1])
 
     drnn_state[loader.q_max_length] = {}
     table.insert(drnn_state[loader.q_max_length], dlst[2])
     table.insert(drnn_state[loader.q_max_length], dlst[3])
 
-    lti:backward(i_batch, dlst[1])
+    dqf = torch.Tensor(qf:size()):zero()
+    if opt.gpuid >= 0 then
+        dqf = dqf:cuda()
+    end
 
     for t = loader.q_max_length, 1, -1 do
-        dlst = clones[t]:backward({qf:select(2, t), unpack(rnn_state[t-1])}, drnn_state[t])
+        dlst = protos.clones.lstm[t]:backward({qf:select(2, t), unpack(rnn_state[t-1])}, drnn_state[t])
+        dqf:select(2, t):copy(dlst[1])
         drnn_state[t-1] = {}
         table.insert(drnn_state[t-1], dlst[2])
         table.insert(drnn_state[t-1], dlst[3])
     end
 
-    _, lstm_dparams = lstm:getParameters()
+    protos.ltw:backward(q_batch, dqf)
+    protos.ltw:updateParameters(opt.learning_rate)
+    protos.ltw:zeroGradParameters()
+
+    _, lstm_dparams = protos.lstm:getParameters()
     lstm_dparams:clamp(-5, 5)
 
     return loss, grad_params
@@ -287,11 +287,7 @@ for i = 1, iterations do
         print('Saving checkpoint to ' .. savefile)
         local checkpoint = {}
         checkpoint.opt = opt
-        checkpoint.protos = {}
-        checkpoint.protos.ltw = ltw
-        checkpoint.protos.lti = lti
-        checkpoint.protos.lstm = lstm
-        checkpoint.protos.sm = sm
+        checkpoint.protos = protos
         checkpoint.vocab_size = loader.q_vocab_size
         torch.save(savefile, checkpoint)
     end
