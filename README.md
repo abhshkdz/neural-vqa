@@ -161,6 +161,7 @@ image-question pairs, download the following and run
 - [answers_vocab.t7](https://dl.dropboxusercontent.com/u/19398876/neural-vqa/answers_vocab.t7)
 - [questions_vocab.t7](https://dl.dropboxusercontent.com/u/19398876/neural-vqa/questions_vocab.t7)
 - [data.t7](https://dl.dropboxusercontent.com/u/19398876/neural-vqa/data.t7)
+- [q_200d_glove_embeddings.t7](https://dl.dropboxusercontent.com/u/19398876/neural-vqa/q_200d_glove_embeddings.t7) (not needed for prediction)
 
 [1]: http://visualqa.org/
 [2]: http://arxiv.org/abs/1505.02074
