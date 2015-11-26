@@ -132,7 +132,6 @@ function utils.clone_many_times(net, T)
     for i = 1, T do
         clones[i] = net:clone('weight', 'bias', 'gradWeight', 'gradBias')
     end
-    collectgarbage()
     return clones
 end
 

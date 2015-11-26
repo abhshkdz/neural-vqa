@@ -62,6 +62,9 @@ loader = DataLoader.create(opt.data_dir, opt.batch_size, opt, 'predict')
 print('loading checkpoint from ' .. opt.checkpoint_file)
 checkpoint = torch.load(opt.checkpoint_file)
 
+lstm_clones = {}
+lstm_clones = utils.clone_many_times(checkpoint.protos.lstm, loader.q_max_length + 1)
+
 checkpoint.protos.ltw:evaluate()
 checkpoint.protos.lti:evaluate()
 
@@ -152,19 +155,18 @@ function predict(input_image_path, question_string)
     local rnn_state = {[0] = init_state}
 
     for t = 1, loader.q_max_length do
-        lst = checkpoint.protos.clones.lstm[t]:forward{qf:select(1,t):view(1,-1), unpack(rnn_state[t-1])}
+        lst = lstm_clones[t]:forward{qf:select(1,t):view(1,-1), unpack(rnn_state[t-1])}
         rnn_state[t] = {}
         for i = 1, #init_state do table.insert(rnn_state[t], lst[i]) end
     end
 
-    local lst = checkpoint.protos.clones.lstm[loader.q_max_length+1]:forward{imf:view(1,-1), unpack(rnn_state[loader.q_max_length])}
+    local lst = lstm_clones[loader.q_max_length+1]:forward{imf:view(1,-1), unpack(rnn_state[loader.q_max_length])}
 
     local prediction = checkpoint.protos.sm:forward(lst[#lst])
 
     local _, idx  = prediction:max(2)
 
     print(a_iv[idx[1][1]])
-
 end
 
 predict(opt.input_image_path, opt.question)

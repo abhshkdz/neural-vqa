@@ -113,12 +113,10 @@ if do_random_init then
     params:uniform(-0.08, 0.08)
 end
 
-init_state = {}
+lstm_clones = {}
+lstm_clones = utils.clone_many_times(protos.lstm, loader.q_max_length + 1)
 
-if not protos.clones then
-    protos.clones = {}
-    protos.clones['lstm'] = utils.clone_many_times(protos.lstm, loader.q_max_length + 1)
-end
+init_state = {}
 
 local h_init = torch.zeros(opt.batch_size, opt.rnn_size)
 
@@ -155,12 +153,12 @@ feval_val = function(max_batches)
         rnn_state = {[0] = init_state_global}
 
         for t = 1, loader.q_max_length do
-            lst = protos.clones.lstm[t]:forward{qf:select(2,t), unpack(rnn_state[t-1])}
+            lst = lstm_clones[t]:forward{qf:select(2,t), unpack(rnn_state[t-1])}
             rnn_state[t] = {}
             for i = 1, #init_state do table.insert(rnn_state[t], lst[i]) end
         end
 
-        lst = protos.clones.lstm[loader.q_max_length+1]:forward{imf, unpack(rnn_state[loader.q_max_length])}
+        lst = lstm_clones[loader.q_max_length+1]:forward{imf, unpack(rnn_state[loader.q_max_length])}
 
         prediction = protos.sm:forward(lst[#lst])
 
@@ -203,12 +201,12 @@ feval = function(x)
     rnn_state = {[0] = init_state_global}
 
     for t = 1, loader.q_max_length do
-        lst = protos.clones.lstm[t]:forward{qf:select(2,t), unpack(rnn_state[t-1])}
+        lst = lstm_clones[t]:forward{qf:select(2,t), unpack(rnn_state[t-1])}
         rnn_state[t] = {}
         for i = 1, #init_state do table.insert(rnn_state[t], lst[i]) end
     end
 
-    lst = protos.clones.lstm[loader.q_max_length + 1]:forward{imf, unpack(rnn_state[loader.q_max_length])}
+    lst = lstm_clones[loader.q_max_length + 1]:forward{imf, unpack(rnn_state[loader.q_max_length])}
 
     prediction = protos.sm:forward(lst[#lst])
 
@@ -222,7 +220,7 @@ feval = function(x)
     drnn_state = {[loader.q_max_length + 1] = utils.clone_list(init_state, true)}
     drnn_state[loader.q_max_length + 1][2] = doutput_t
 
-    dlst = protos.clones.lstm[loader.q_max_length + 1]:backward({imf, unpack(rnn_state[loader.q_max_length])}, drnn_state[loader.q_max_length + 1])
+    dlst = lstm_clones[loader.q_max_length + 1]:backward({imf, unpack(rnn_state[loader.q_max_length])}, drnn_state[loader.q_max_length + 1])
 
     protos.lti:backward(i_batch, dlst[1])
 
@@ -236,7 +234,7 @@ feval = function(x)
     end
 
     for t = loader.q_max_length, 1, -1 do
-        dlst = protos.clones.lstm[t]:backward({qf:select(2, t), unpack(rnn_state[t-1])}, drnn_state[t])
+        dlst = lstm_clones[t]:backward({qf:select(2, t), unpack(rnn_state[t-1])}, drnn_state[t])
         dqf:select(2, t):copy(dlst[1])
         drnn_state[t-1] = {}
         table.insert(drnn_state[t-1], dlst[2])
@@ -247,8 +245,7 @@ feval = function(x)
     protos.ltw:updateParameters(opt.learning_rate)
     protos.ltw:zeroGradParameters()
 
-    _, lstm_dparams = protos.lstm:getParameters()
-    lstm_dparams:clamp(-5, 5)
+    grad_params:clamp(-5, 5)
 
     return loss, grad_params
 
@@ -258,9 +255,11 @@ local optim_state = {learningRate = opt.learning_rate, alpha = opt.decay_rate}
 
 losses = {}
 iterations = opt.max_epochs * loader.batch_data.train.nbatches
+print('Max iterations: ' .. iterations)
 lloss = 0
 for i = 1, iterations do
     _,local_loss = optim.rmsprop(feval, params, optim_state)
+
     losses[#losses + 1] = local_loss[1]
 
     lloss = lloss + local_loss[1]

@@ -51,6 +51,9 @@ loader = DataLoader.create(opt.data_dir, opt.batch_size, opt)
 print('loading checkpoint from ' .. opt.checkpoint_file)
 checkpoint = torch.load(opt.checkpoint_file)
 
+lstm_clones = {}
+lstm_clones = utils.clone_many_times(checkpoint.protos.lstm, loader.q_max_length + 1)
+
 checkpoint.protos.ltw:evaluate()
 checkpoint.protos.lti:evaluate()
 
@@ -99,12 +102,12 @@ for i = 1, loader.batch_data.val.nbatches do
     rnn_state = {[0] = init_state_global}
 
     for t = 1, loader.q_max_length do
-        lst = checkpoint.protos.clones.lstm[t]:forward{qf:select(2,t), unpack(rnn_state[t-1])}
+        lst = lstm_clones[t]:forward{qf:select(2,t), unpack(rnn_state[t-1])}
         rnn_state[t] = {}
         for i = 1, #init_state do table.insert(rnn_state[t], lst[i]) end
     end
 
-    lst = checkpoint.protos.clones.lstm[loader.q_max_length+1]:forward{imf, unpack(rnn_state[loader.q_max_length])}
+    lst = lstm_clones[loader.q_max_length+1]:forward{imf, unpack(rnn_state[loader.q_max_length])}
 
     prediction = checkpoint.protos.sm:forward(lst[#lst])
 
