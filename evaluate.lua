@@ -69,7 +69,7 @@ for i,v in pairs(loader.q_vocab_mapping) do
     q_iv[v] =  i
 end
 
-if vocab_size ~= loader.q_vocab_size then
+if q_vocab_size ~= loader.q_vocab_size then
     print('Vocab size of checkpoint and data are different.')
 end
 
