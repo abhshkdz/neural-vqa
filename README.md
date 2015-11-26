@@ -95,52 +95,52 @@ and answers predicted by the VIS+LSTM model.
 
 ![](http://i.imgur.com/V3nHbo9.jpg)
 
-Q: What animals are those?  
+Q: What animals are those?
 A: Sheep
 
 ![](http://i.imgur.com/QRBi6qb.jpg)
 
-Q: What color is the frisbee that's upside down?  
+Q: What color is the frisbee that's upside down?
 A: Red
 
 ![](http://i.imgur.com/tiOqJfH.jpg)
 
-Q: What is flying in the sky?  
+Q: What is flying in the sky?
 A: Kite
 
 ![](http://i.imgur.com/4ZmOoUF.jpg)
 
-Q: What color is court?  
+Q: What color is court?
 A: Blue
 
 ![](http://i.imgur.com/1D6NxvD.jpg)
 
-Q: What is in the standing person's hands?  
+Q: What is in the standing person's hands?
 A: Bat
 
 ![](http://i.imgur.com/tY9BT1I.jpg)
 
-Q: Are they riding horses both the same color?  
+Q: Are they riding horses both the same color?
 A: No
 
 ![](http://i.imgur.com/hzwj0NS.jpg)
 
-Q: What shape is the plate?  
+Q: What shape is the plate?
 A: Round
 
 ![](http://i.imgur.com/n1Kn1vZ.jpg)
 
-Q: Is the man wearing socks?  
+Q: Is the man wearing socks?
 A: Yes
 
 ![](http://i.imgur.com/dXhNKP6.jpg)
 
-Q: What is over the woman's left shoulder?  
+Q: What is over the woman's left shoulder?
 A: Fork
 
 ![](http://i.imgur.com/thzv03r.jpg)
 
-Q: Where are the pink flowers?  
+Q: Where are the pink flowers?
 A: On wall
 
 ## Implementation Details
@@ -153,15 +153,24 @@ A: On wall
 
 ## Pretrained model and data files
 
-To reproduce results shown on this page or try your own 
+To reproduce results shown on this page or try your own
 image-question pairs, download the following and run
 `predict.lua` with the appropriate paths.
 
-- [lr1e-4b64\_epoch16.65\_0.5064.t7](https://dl.dropboxusercontent.com/u/19398876/neural-vqa/lr1e-4b64_epoch16.65_0.5064.t7)
+- [vqa\_epoch23.49\_0.5031.t7](https://dl.dropboxusercontent.com/u/19398876/neural-vqa/vqa_epoch23.49_0.5031.t7)
 - [answers_vocab.t7](https://dl.dropboxusercontent.com/u/19398876/neural-vqa/answers_vocab.t7)
 - [questions_vocab.t7](https://dl.dropboxusercontent.com/u/19398876/neural-vqa/questions_vocab.t7)
 - [data.t7](https://dl.dropboxusercontent.com/u/19398876/neural-vqa/data.t7)
-- [q_200d_glove_embeddings.t7](https://dl.dropboxusercontent.com/u/19398876/neural-vqa/q_200d_glove_embeddings.t7) (not needed for prediction)
+- [q\_200d\_glove\_embeddings.t7](https://dl.dropboxusercontent.com/u/19398876/neural-vqa/q_200d_glove_embeddings.t7) (not needed for prediction)
+
+## References
+
+- [VQA: Visual Question Answering][3], Antol et al., ICCV15
+- [Exploring Models and Data for Image Question Answering][2], Ren et al., NIPS15
+
+## License
+
+MIT
 
 [1]: http://visualqa.org/
 [2]: http://arxiv.org/abs/1505.02074
