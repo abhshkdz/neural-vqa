@@ -62,6 +62,10 @@ for i = 1, #cnn.modules do
     end
 end
 
+-- L2 normalize activations
+cnn_fc7:add(nn.Normalize(2))
+cnn_fc7:evaluate()
+
 if opt.gpuid >= 0 then
     cnn_fc7 = cnn_fc7:cuda()
 end
