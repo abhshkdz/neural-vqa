@@ -146,7 +146,6 @@ A: On wall
 ## Implementation Details
 
 - Last hidden layer image features from [VGG-19][6]
-- [GloVe][5] 200d word embeddings as question features
 - Zero-padded question sequences for batched implementation
 - Training questions are filtered for `top_n` answers,
 `top_n = 1000` by default (~87% coverage)
@@ -161,12 +160,11 @@ image-question pairs, download the following and run
 - [answers_vocab.t7](https://dl.dropboxusercontent.com/u/19398876/neural-vqa/answers_vocab.t7)
 - [questions_vocab.t7](https://dl.dropboxusercontent.com/u/19398876/neural-vqa/questions_vocab.t7)
 - [data.t7](https://dl.dropboxusercontent.com/u/19398876/neural-vqa/data.t7)
-- [q\_200d\_glove\_embeddings.t7](https://dl.dropboxusercontent.com/u/19398876/neural-vqa/q_200d_glove_embeddings.t7) (not needed for prediction)
 
 ## References
 
-- [VQA: Visual Question Answering][3], Antol et al., ICCV15
 - [Exploring Models and Data for Image Question Answering][2], Ren et al., NIPS15
+- [VQA: Visual Question Answering][3], Antol et al., ICCV15
 
 ## License
 

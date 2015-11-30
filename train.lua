@@ -77,7 +77,9 @@ else
 
     protos.ltw = nn.Sequential()
     protos.ltw:add(nn.LookupTable(loader.q_vocab_size, opt.embedding_size))
-    protos.ltw:get(1).weight = loader.q_embeddings:clone()
+    -- if using word2vec or GloVe embeddings, set weights of `nn.LookupTable` as follows
+    -- protos.ltw:get(1).weight = q_embeddings:clone()
+    -- `q_embeddings` would be vocabulary_size x embedding_size
     protos.ltw:add(nn.Dropout(opt.dropout))
 
     protos.lti = nn.Sequential()
