@@ -18,15 +18,18 @@ cmd = torch.CmdLine()
 cmd:text('Options')
 
 -- model params
-cmd:option('-rnn_size', 1024, 'Size of LSTM internal state')
-cmd:option('-embedding_size', 200, 'Size of word embeddings')
+cmd:option('-rnn_size', 512, 'Size of LSTM internal state')
+cmd:option('-num_layers', 2, 'Number of layers in LSTM')
+cmd:option('-embedding_size', 512, 'Size of word embeddings')
 -- optimization
-cmd:option('-learning_rate', 1e-4, 'Learning rate')
+cmd:option('-learning_rate', 4e-4, 'Learning rate')
 cmd:option('-learning_rate_decay', 0.95, 'Learning rate decay')
-cmd:option('-learning_rate_decay_after', 10, 'In number of epochs, when to start decaying the learning rate')
-cmd:option('-decay_rate', 0.95, 'Decay rate for rmsprop')
+cmd:option('-learning_rate_decay_after', 15, 'In number of epochs, when to start decaying the learning rate')
+cmd:option('-alpha', 0.8, 'alpha for adam')
+cmd:option('-beta', 0.999, 'beta used for adam')
+cmd:option('-epsilon', 1e-8, 'epsilon that goes into denominator for smoothing')
 cmd:option('-batch_size', 64, 'Batch size')
-cmd:option('-max_epochs', 50, 'Number of full passes through the training data')
+cmd:option('-max_epochs', 15, 'Number of full passes through the training data')
 cmd:option('-dropout', 0.5, 'Dropout')
 cmd:option('-init_from', '', 'Initialize network parameters from checkpoint at this path')
 -- bookkeeping
@@ -87,7 +90,7 @@ else
     protos.lti:add(nn.Tanh())
     protos.lti:add(nn.Dropout(opt.dropout))
 
-    protos.lstm = LSTM.create(opt.embedding_size, opt.rnn_size)
+    protos.lstm = LSTM.create(opt.embedding_size, opt.rnn_size, opt.num_layers)
 
     protos.sm = nn.Sequential()
     protos.sm:add(nn.Linear(opt.rnn_size, loader.a_vocab_size))
@@ -119,15 +122,12 @@ lstm_clones = {}
 lstm_clones = utils.clone_many_times(protos.lstm, loader.q_max_length + 1)
 
 init_state = {}
-
-local h_init = torch.zeros(opt.batch_size, opt.rnn_size)
-
-if opt.gpuid >= 0 then
-    h_init = h_init:cuda()
+for L = 1, opt.num_layers do
+    local h_init = torch.zeros(opt.batch_size, opt.rnn_size)
+    if opt.gpuid >=0 then h_init = h_init:cuda() end
+    table.insert(init_state, h_init:clone())
+    table.insert(init_state, h_init:clone())
 end
-
-table.insert(init_state, h_init:clone())
-table.insert(init_state, h_init:clone())
 
 local init_state_global = utils.clone_list(init_state)
 
@@ -160,7 +160,7 @@ feval_val = function(max_batches)
             for i = 1, #init_state do table.insert(rnn_state[t], lst[i]) end
         end
 
-        lst = lstm_clones[loader.q_max_length+1]:forward{imf, unpack(rnn_state[loader.q_max_length])}
+        lst = lstm_clones[loader.q_max_length + 1]:forward{imf, unpack(rnn_state[loader.q_max_length])}
 
         prediction = protos.sm:forward(lst[#lst])
 
@@ -220,15 +220,18 @@ feval = function(x)
     doutput_t = protos.sm:backward(lst[#lst], dloss)
 
     drnn_state = {[loader.q_max_length + 1] = utils.clone_list(init_state, true)}
-    drnn_state[loader.q_max_length + 1][2] = doutput_t
+    drnn_state[loader.q_max_length + 1][opt.num_layers * 2] = doutput_t
 
     dlst = lstm_clones[loader.q_max_length + 1]:backward({imf, unpack(rnn_state[loader.q_max_length])}, drnn_state[loader.q_max_length + 1])
 
     protos.lti:backward(i_batch, dlst[1])
 
     drnn_state[loader.q_max_length] = {}
-    table.insert(drnn_state[loader.q_max_length], dlst[2])
-    table.insert(drnn_state[loader.q_max_length], dlst[3])
+    for i,v in pairs(dlst) do
+        if i > 1 then
+            drnn_state[loader.q_max_length][i-1] = v
+        end
+    end
 
     dqf = torch.Tensor(qf:size()):zero()
     if opt.gpuid >= 0 then
@@ -239,13 +242,16 @@ feval = function(x)
         dlst = lstm_clones[t]:backward({qf:select(2, t), unpack(rnn_state[t-1])}, drnn_state[t])
         dqf:select(2, t):copy(dlst[1])
         drnn_state[t-1] = {}
-        table.insert(drnn_state[t-1], dlst[2])
-        table.insert(drnn_state[t-1], dlst[3])
+        for i,v in pairs(dlst) do
+            if i > 1 then
+                drnn_state[t-1][i-1] = v
+            end
+        end
     end
 
+    protos.ltw:zeroGradParameters()
     protos.ltw:backward(q_batch, dqf)
     protos.ltw:updateParameters(opt.learning_rate)
-    protos.ltw:zeroGradParameters()
 
     grad_params:clamp(-5, 5)
 
@@ -253,14 +259,14 @@ feval = function(x)
 
 end
 
-local optim_state = {learningRate = opt.learning_rate, alpha = opt.decay_rate}
+local optim_state = {learningRate = opt.learning_rate, alpha = opt.alpha, beta = opt.beta, epsilon = opt.epsilon}
 
 losses = {}
 iterations = opt.max_epochs * loader.batch_data.train.nbatches
 print('Max iterations: ' .. iterations)
 lloss = 0
 for i = 1, iterations do
-    _,local_loss = optim.rmsprop(feval, params, optim_state)
+    _, local_loss = optim.adam(feval, params, optim_state)
 
     losses[#losses + 1] = local_loss[1]
 

@@ -11,8 +11,9 @@ cmd = torch.CmdLine()
 cmd:text('Options')
 
 -- model params
-cmd:option('-rnn_size', 1024, 'size of LSTM internal state')
-cmd:option('-embedding_size', 200, 'size of word embeddings')
+cmd:option('-rnn_size', 512, 'size of LSTM internal state')
+cmd:option('-num_layers', 2, 'Number of layers in LSTM')
+cmd:option('-embedding_size', 512, 'size of word embeddings')
 -- optimization
 cmd:option('-batch_size', 64, 'batch size')
 -- bookkeeping
@@ -74,15 +75,12 @@ if q_vocab_size ~= loader.q_vocab_size then
 end
 
 init_state = {}
-
-local h_init = torch.zeros(opt.batch_size, opt.rnn_size)
-
-if opt.gpuid >= 0 then
-    h_init = h_init:cuda()
+for L = 1, opt.num_layers do
+    local h_init = torch.zeros(opt.batch_size, opt.rnn_size)
+    if opt.gpuid >=0 then h_init = h_init:cuda() end
+    table.insert(init_state, h_init:clone())
+    table.insert(init_state, h_init:clone())
 end
-
-table.insert(init_state, h_init:clone())
-table.insert(init_state, h_init:clone())
 
 local init_state_global = utils.clone_list(init_state)
 
@@ -98,7 +96,6 @@ for i = 1, loader.batch_data.val.nbatches do
         imf = imf:cuda()
     end
 
-    loss = 0
     rnn_state = {[0] = init_state_global}
 
     for t = 1, loader.q_max_length do
@@ -107,7 +104,7 @@ for i = 1, loader.batch_data.val.nbatches do
         for i = 1, #init_state do table.insert(rnn_state[t], lst[i]) end
     end
 
-    lst = lstm_clones[loader.q_max_length+1]:forward{imf, unpack(rnn_state[loader.q_max_length])}
+    lst = lstm_clones[loader.q_max_length + 1]:forward{imf, unpack(rnn_state[loader.q_max_length])}
 
     prediction = checkpoint.protos.sm:forward(lst[#lst])
 

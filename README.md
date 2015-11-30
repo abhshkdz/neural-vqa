@@ -56,14 +56,17 @@ th train.lua
 
 #### Options
 
-- `rnn_size`: Size of LSTM internal state. Default is 1024.
-- `embedding_size`: Size of word embeddings. Default is 200.
-- `learning_rate`: Learning rate. Default is 1e-4.
+- `rnn_size`: Size of LSTM internal state. Default is 512.
+- `num_layers`: Number of layers in LSTM
+- `embedding_size`: Size of word embeddings. Default is 512.
+- `learning_rate`: Learning rate. Default is 4e-4.
 - `learning_rate_decay`: Learning rate decay factor. Default is 0.95.
-- `learning_rate_decay_after`: In number of epochs, when to start decaying the learning rate. Default is 10.
-- `decay_rate`: Decay rate for RMSProp. Default is 0.95.
+- `learning_rate_decay_after`: In number of epochs, when to start decaying the learning rate. Default is 15.
+- `alpha`: Alpha for adam. Default is 0.8
+- `beta`: Beta used for adam. Default is 0.999.
+- `epsilon`: Denominator term for smoothing. Default is 1e-8.
 - `batch_size`: Batch size. Default is 64.
-- `max_epochs`: Number of full passes through the training data. Default is 50.
+- `max_epochs`: Number of full passes through the training data. Default is 15.
 - `dropout`:  Dropout for regularization. Probability of dropping input. Default is 0.5.
 - `init_from`: Initialize network parameters from checkpoint at this path.
 - `save_every`: No. of iterations after which to checkpoint. Default is 1000.

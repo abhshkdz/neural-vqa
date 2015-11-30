@@ -15,8 +15,9 @@ cmd = torch.CmdLine()
 cmd:text('Options')
 
 -- model params
-cmd:option('-rnn_size', 1024, 'size of LSTM internal state')
-cmd:option('-embedding_size', 200, 'size of word embeddings')
+cmd:option('-rnn_size', 512, 'size of LSTM internal state')
+cmd:option('-num_layers', 2, 'Number of layers in LSTM')
+cmd:option('-embedding_size', 512, 'size of word embeddings')
 -- optimization
 cmd:option('-batch_size', 64, 'batch size')
 -- bookkeeping
@@ -142,25 +143,22 @@ function predict(input_image_path, question_string)
     -- lstm + softmax
 
     local init_state = {}
-
-    local h_init = torch.zeros(1, opt.rnn_size)
-
-    if opt.gpuid >= 0 then
-        h_init = h_init:cuda()
+    for L = 1, opt.num_layers do
+        local h_init = torch.zeros(1, opt.rnn_size)
+        if opt.gpuid >=0 then h_init = h_init:cuda() end
+        table.insert(init_state, h_init:clone())
+        table.insert(init_state, h_init:clone())
     end
-
-    table.insert(init_state, h_init:clone())
-    table.insert(init_state, h_init:clone())
 
     local rnn_state = {[0] = init_state}
 
     for t = 1, loader.q_max_length do
-        lst = lstm_clones[t]:forward{qf:select(1,t):view(1,-1), unpack(rnn_state[t-1])}
+        local lst = lstm_clones[t]:forward{qf:select(1,t):view(1,-1), unpack(rnn_state[t-1])}
         rnn_state[t] = {}
         for i = 1, #init_state do table.insert(rnn_state[t], lst[i]) end
     end
 
-    local lst = lstm_clones[loader.q_max_length+1]:forward{imf:view(1,-1), unpack(rnn_state[loader.q_max_length])}
+    local lst = lstm_clones[loader.q_max_length + 1]:forward{imf:view(1,-1), unpack(rnn_state[loader.q_max_length])}
 
     local prediction = checkpoint.protos.sm:forward(lst[#lst])
 
