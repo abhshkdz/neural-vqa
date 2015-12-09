@@ -22,7 +22,7 @@ Download the [VGG-19][7] Caffe model and prototxt using `sh models/download_mode
 
 ### Known issues
 
-- To avoid memory issues with LuaJIT, install Torch with vanilla Lua.
+- To avoid memory issues with LuaJIT, install Torch with Lua 5.1 (`TORCH_LUA_VERSION=LUA51 ./install.sh`).
 More instructions [here][4].
 - If working with plain Lua, [luaffifb][8] may be needed for [loadcaffe][9],
 unless using pre-extracted fc7 features.
