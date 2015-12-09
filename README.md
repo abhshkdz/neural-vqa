@@ -159,7 +159,7 @@ To reproduce results shown on this page or try your own
 image-question pairs, download the following and run
 `predict.lua` with the appropriate paths.
 
-- [vqa\_epoch23.49\_0.5031.t7](https://dl.dropboxusercontent.com/u/19398876/neural-vqa/vqa_epoch23.49_0.5031.t7)
+- [vqa\_epoch15.00\_0.4576.t7](https://dl.dropboxusercontent.com/u/19398876/neural-vqa/vqa_epoch15.00_0.4576.t7)
 - [answers_vocab.t7](https://dl.dropboxusercontent.com/u/19398876/neural-vqa/answers_vocab.t7)
 - [questions_vocab.t7](https://dl.dropboxusercontent.com/u/19398876/neural-vqa/questions_vocab.t7)
 - [data.t7](https://dl.dropboxusercontent.com/u/19398876/neural-vqa/data.t7)
@@ -168,6 +168,10 @@ image-question pairs, download the following and run
 
 - [Exploring Models and Data for Image Question Answering][2], Ren et al., NIPS15
 - [VQA: Visual Question Answering][3], Antol et al., ICCV15
+
+## Acknowledgements
+
+- [@ilija139](https://github.com/ilija139) for model checkpoint and data files.
 
 ## License
 
