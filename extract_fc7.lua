@@ -98,9 +98,6 @@ repeat
             break
         end
         local fp = path.join(opt.input_image_dir, string.format('%s2014/COCO_%s2014_%.12d.jpg', opt.split, opt.split, image_id[idx]))
-        if image_id[idx] == 320612 and opt.split == 'val' then -- this is png :/
-            fp = path.join(opt.input_image_dir, 'val2014/COCO_val2014_000000320612.png.jpg')
-        end
         if opt.debug == 1 then
             print(idx)
             print(fp)
