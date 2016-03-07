@@ -14,8 +14,19 @@ Requirements:
 - [Torch][10]
 - [loadcaffe][9]
 
-Download the [MSCOCO][11] train+val images and [VQA][1] data using `sh data/download_data.sh`.
-If you have them downloaded, copy over the `train2014` and `val2014` image folders
+Download the [MSCOCO][11] train+val images and [VQA][1] data using `sh data/download_data.sh`. Extract all the downloaded zip files inside the `data` folder.
+
+```
+unzip Annotations_Train_mscoco.zip
+unzip Questions_Train_mscoco.zip
+unzip train2014.zip
+
+unzip Annotations_Val_mscoco.zip
+unzip Questions_Val_mscoco.zip
+unzip val2014.zip
+```
+
+If you had them downloaded already, copy over the `train2014` and `val2014` image folders
 and VQA JSON files to the `data` folder.
 
 Download the [VGG-19][7] Caffe model and prototxt using `sh models/download_models.sh`.
