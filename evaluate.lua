@@ -17,7 +17,7 @@ cmd:option('-embedding_size', 512, 'size of word embeddings')
 -- optimization
 cmd:option('-batch_size', 64, 'batch size')
 -- bookkeeping
-cmd:option('-checkpoint_file', 'checkpoints/lr1e-4b64_epoch17.25_0.5063.t7', 'Checkpoint file to use for predictions')
+cmd:option('-checkpoint_file', 'checkpoints/vqa_epoch23.26_0.4610.t7', 'Checkpoint file to use for predictions')
 cmd:option('-data_dir', 'data', 'data directory')
 cmd:option('-seed', 981723, 'Torch manual random number generator seed')
 cmd:option('-train_fc7_file', 'data/train_fc7.t7', 'Path to fc7 features of training set')

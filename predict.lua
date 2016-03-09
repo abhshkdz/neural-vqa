@@ -23,7 +23,7 @@ cmd:option('-batch_size', 64, 'batch size')
 -- bookkeeping
 cmd:option('-proto_file', 'models/VGG_ILSVRC_19_layers_deploy.prototxt')
 cmd:option('-model_file', 'models/VGG_ILSVRC_19_layers.caffemodel')
-cmd:option('-checkpoint_file', 'checkpoints/lr1e-4b64_epoch8.62_0.4901.t7', 'Checkpoint file to use for predictions')
+cmd:option('-checkpoint_file', 'checkpoints/vqa_epoch23.26_0.4610.t7', 'Checkpoint file to use for predictions')
 cmd:option('-data_dir', 'data', 'data directory')
 cmd:option('-seed', 981723, 'Torch manual random number generator seed')
 cmd:option('-feat_layer', 'fc7', 'Layer to extract features from')

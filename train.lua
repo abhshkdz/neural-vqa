@@ -33,7 +33,7 @@ cmd:option('-alpha', 0.8, 'alpha for adam')
 cmd:option('-beta', 0.999, 'beta used for adam')
 cmd:option('-epsilon', 1e-8, 'epsilon that goes into denominator for smoothing')
 cmd:option('-batch_size', 200, 'Batch size')
-cmd:option('-max_epochs', 15, 'Number of full passes through the training data')
+cmd:option('-max_epochs', 50, 'Number of full passes through the training data')
 cmd:option('-dropout', 0.5, 'Dropout')
 cmd:option('-init_from', '', 'Initialize network parameters from checkpoint at this path')
 -- bookkeeping

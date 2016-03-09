@@ -93,7 +93,7 @@ th train.lua
 ### Testing
 
 ```
-th predict.lua -checkpoint_file checkpoints/lr1e-4b64_epoch17.25_0.5063.t7 -input_image_path data/train2014/COCO_train2014_000000405541.jpg -question 'What is the cat on?'
+th predict.lua -checkpoint_file checkpoints/vqa_epoch23.26_0.4610.t7 -input_image_path data/train2014/COCO_train2014_000000405541.jpg -question 'What is the cat on?'
 ```
 
 #### Options
@@ -170,7 +170,7 @@ To reproduce results shown on this page or try your own
 image-question pairs, download the following and run
 `predict.lua` with the appropriate paths.
 
-- [vqa\_epoch15.00\_0.4576.t7](https://dl.dropboxusercontent.com/u/19398876/neural-vqa/vqa_epoch15.00_0.4576.t7)
+- vqa\_epoch23.26\_0.4610.t7 [[GPU](https://dl.dropboxusercontent.com/u/19398876/neural-vqa/vqa_epoch23.26_0.4610.t7)] [[CPU](https://dl.dropboxusercontent.com/u/19398876/neural-vqa/vqa_epoch23.26_0.4610_cpu.t7)]
 - [answers_vocab.t7](https://dl.dropboxusercontent.com/u/19398876/neural-vqa/answers_vocab.t7)
 - [questions_vocab.t7](https://dl.dropboxusercontent.com/u/19398876/neural-vqa/questions_vocab.t7)
 - [data.t7](https://dl.dropboxusercontent.com/u/19398876/neural-vqa/data.t7)
@@ -179,10 +179,6 @@ image-question pairs, download the following and run
 
 - [Exploring Models and Data for Image Question Answering][2], Ren et al., NIPS15
 - [VQA: Visual Question Answering][3], Antol et al., ICCV15
-
-## Acknowledgements
-
-- [@ilija139](https://github.com/ilija139) for model checkpoint and data files.
 
 ## License
 
