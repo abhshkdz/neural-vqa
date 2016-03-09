@@ -138,6 +138,9 @@ function predict(input_image_path, question_string)
         question = question:cuda()
     end
 
+    -- 1st index of `nn.LookupTable` is for zeros
+    question = question + 1
+
     local qf = checkpoint.protos.ltw:forward(question)
 
     -- lstm + softmax

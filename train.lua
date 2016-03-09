@@ -32,7 +32,7 @@ cmd:option('-learning_rate_decay_after', 15, 'In number of epochs, when to start
 cmd:option('-alpha', 0.8, 'alpha for adam')
 cmd:option('-beta', 0.999, 'beta used for adam')
 cmd:option('-epsilon', 1e-8, 'epsilon that goes into denominator for smoothing')
-cmd:option('-batch_size', 64, 'Batch size')
+cmd:option('-batch_size', 200, 'Batch size')
 cmd:option('-max_epochs', 15, 'Number of full passes through the training data')
 cmd:option('-dropout', 0.5, 'Dropout')
 cmd:option('-init_from', '', 'Initialize network parameters from checkpoint at this path')
@@ -97,7 +97,7 @@ else
     -- and then is passed through ltw to get a vector of size `embedding_size`
     -- lookup table dimensions are `vocab_size` x `embedding_size`
     protos.ltw = nn.Sequential()
-    protos.ltw:add(nn.LookupTable(loader.q_vocab_size, opt.embedding_size))
+    protos.ltw:add(nn.LookupTable(loader.q_vocab_size+1, opt.embedding_size))
     protos.ltw:add(nn.Dropout(opt.dropout))
 
     -- lti: fully connected layer + dropout for image features
@@ -177,6 +177,9 @@ feval_val = function(max_batches)
         -- load question batch, answer batch and image features batch
         q_batch, a_batch, i_batch = loader:next_batch('val')
 
+        -- 1st index of `nn.LookupTable` is reserved for zeros
+        q_batch = q_batch + 1
+
         -- forward the question features through ltw
         qf = protos.ltw:forward(q_batch)
 
@@ -235,6 +238,9 @@ feval = function(x)
 
     -- load question batch, answer batch and image features batch
     q_batch, a_batch, i_batch = loader:next_batch()
+
+    -- slightly hackish; 1st index of `nn.LookupTable` is reserved for zeros
+    q_batch = q_batch + 1
 
     -- forward the question features through ltw
     qf = protos.ltw:forward(q_batch)

@@ -88,6 +88,9 @@ count = 0
 for i = 1, loader.batch_data.val.nbatches do
     q_batch, a_batch, i_batch = loader:next_batch('val')
 
+    -- 1st index of `nn.LookupTable` is for zeros
+    q_batch = q_batch + 1
+
     qf = checkpoint.protos.ltw:forward(q_batch)
 
     imf = checkpoint.protos.lti:forward(i_batch)
