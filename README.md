@@ -170,7 +170,7 @@ To reproduce results shown on this page or try your own
 image-question pairs, download the following and run
 `predict.lua` with the appropriate paths.
 
-- vqa\_epoch23.26\_0.4610.t7 [[GPU](https://dl.dropboxusercontent.com/u/19398876/neural-vqa/vqa_epoch23.26_0.4610.t7)] [[CPU](https://dl.dropboxusercontent.com/u/19398876/neural-vqa/vqa_epoch23.26_0.4610_cpu.t7)]
+- vqa\_epoch23.26\_0.4610.t7 (Serialized using Lua51) [[GPU](https://dl.dropboxusercontent.com/u/19398876/neural-vqa/vqa_epoch23.26_0.4610.t7)] [[CPU](https://dl.dropboxusercontent.com/u/19398876/neural-vqa/vqa_epoch23.26_0.4610_cpu.t7)]
 - [answers_vocab.t7](https://dl.dropboxusercontent.com/u/19398876/neural-vqa/answers_vocab.t7)
 - [questions_vocab.t7](https://dl.dropboxusercontent.com/u/19398876/neural-vqa/questions_vocab.t7)
 - [data.t7](https://dl.dropboxusercontent.com/u/19398876/neural-vqa/data.t7)
