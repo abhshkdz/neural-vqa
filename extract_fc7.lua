@@ -120,7 +120,9 @@ repeat
         fc7[idx - fc7_batch:size(1) + i - 1]:copy(fc7_batch[i])
     end
 
-    cutorch.synchronize()
+    if opt.gpuid >= 0 then
+        cutorch.synchronize()
+    end
 
     local time = timer:time().real
     print(idx-1 .. '/' .. #image_id .. " " .. time)
