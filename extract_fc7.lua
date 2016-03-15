@@ -19,7 +19,7 @@ cmd:option('-seed', 981723, 'Torch manual random number generator seed')
 cmd:option('-proto_file', 'models/VGG_ILSVRC_19_layers_deploy.prototxt')
 cmd:option('-model_file', 'models/VGG_ILSVRC_19_layers.caffemodel')
 cmd:option('-data_dir', 'data', 'Data directory.')
-cmd:option('-feat_layer', 'fc7', 'Layer to extract features from')
+cmd:option('-feat_layer', 'relu7', 'Layer to extract features from')
 cmd:option('-input_image_dir', 'data', 'Image directory')
 -- gpu/cpu
 cmd:option('-gpuid', -1, '0-indexed id of GPU to use. -1 = CPU')
@@ -62,8 +62,6 @@ for i = 1, #cnn.modules do
     end
 end
 
--- L2 normalize activations
-cnn_fc7:add(nn.Normalize(2))
 cnn_fc7:evaluate()
 
 if opt.gpuid >= 0 then
