@@ -51,6 +51,7 @@ cmd:option('-gpuid', -1, '0-indexed id of GPU to use. -1 = CPU')
 
 -- parse command-line parameters
 opt = cmd:parse(arg or {})
+print(opt)
 torch.manualSeed(opt.seed)
 
 -- gpu stuff
