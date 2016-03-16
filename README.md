@@ -1,5 +1,7 @@
 # neural-vqa
 
+[![Join the chat at https://gitter.im/abhshkdz/neural-vqa](https://badges.gitter.im/abhshkdz/neural-vqa.svg)](https://gitter.im/abhshkdz/neural-vqa?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
+
 This is an experimental Torch implementation of the
 VIS + LSTM visual question answering model from the paper
 [Exploring Models and Data for Image Question Answering][2]
