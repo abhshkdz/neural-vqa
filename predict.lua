@@ -8,7 +8,7 @@ require 'image'
 local utils = require 'utils.misc'
 local DataLoader = require 'utils.DataLoader'
 
-require 'loadcaffe_wrapper'
+require 'loadcaffe'
 local LSTM = require 'lstm'
 
 cmd = torch.CmdLine()
