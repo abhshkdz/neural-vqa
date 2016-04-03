@@ -100,7 +100,7 @@ th predict.lua -checkpoint_file checkpoints/vqa_epoch23.26_0.4610.t7 -input_imag
 
 #### Options
 
-- `checkpoint_file`: Path to model checkpoint to initialize network parameters fro
+- `checkpoint_file`: Path to model checkpoint to initialize network parameters from
 - `input_image_path`: Path to input image
 - `question`: Question string
 
