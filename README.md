@@ -184,7 +184,7 @@ image-question pairs, download the following and run
 
 ## License
 
-MIT
+[MIT][12]
 
 [1]: http://visualqa.org/
 [2]: http://arxiv.org/abs/1505.02074
@@ -197,3 +197,4 @@ MIT
 [9]: https://github.com/szagoruyko/loadcaffe
 [10]: http://torch.ch/
 [11]: http://mscoco.org/
+[12]: https://abhshkdz.mit-license.org/
